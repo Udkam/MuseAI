@@ -1,10 +1,15 @@
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool, text
 
 from backend.app.infra.postgres.models import Base
+
+# Load .env from project root
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 config = context.config
 
@@ -41,6 +46,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # Pre-create alembic_version with VARCHAR(64) if it doesn't exist.
+        # Alembic defaults to VARCHAR(32), which truncates long revision IDs.
+        connection.execute(text(
+            "CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(64) NOT NULL)"
+        ))
+        connection.commit()
+
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

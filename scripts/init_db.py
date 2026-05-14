@@ -40,6 +40,12 @@ import asyncio
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env file from project root so os.environ picks up DATABASE_URL etc.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -60,7 +66,7 @@ def check_postgres() -> bool:
         # Convert async URL to sync for psycopg2
         sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
         conn = psycopg2.connect(sync_url, connect_timeout=5)
-        conn.execute("SELECT 1")
+        conn.cursor().execute("SELECT 1")
         conn.close()
         print("  [OK]   PostgreSQL is reachable")
         return True
