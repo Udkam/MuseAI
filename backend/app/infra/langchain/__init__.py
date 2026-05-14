@@ -23,13 +23,40 @@ from app.infra.langchain.curator_tools import (
     ReflectionPromptTool,
     create_curator_tools,
 )
-from app.infra.langchain.embeddings import CustomOllamaEmbeddings
+from app.infra.langchain.embeddings import (
+    CustomOllamaEmbeddings,
+    LangChainEmbeddings,
+    OpenAICompatibleEmbeddings,
+)
 from app.infra.langchain.retrievers import RRFRetriever, UnifiedRetriever
 from app.infra.providers.rerank import create_rerank_provider as _create_rerank_provider_impl
 
 
-def create_embeddings(settings: Settings) -> CustomOllamaEmbeddings:
-    """创建Embeddings实例。"""
+def create_embeddings(settings: Settings) -> LangChainEmbeddings:
+    """创建Embeddings实例，根据EMBEDDING_PROVIDER选择提供者。"""
+    provider_type = settings.EMBEDDING_PROVIDER.lower()
+
+    if provider_type == "openai":
+        if not settings.EMBEDDING_OPENAI_BASE_URL:
+            raise ValueError(
+                "EMBEDDING_OPENAI_BASE_URL must be set when EMBEDDING_PROVIDER=openai"
+            )
+        if not settings.EMBEDDING_OPENAI_API_KEY:
+            raise ValueError(
+                "EMBEDDING_OPENAI_API_KEY must be set when EMBEDDING_PROVIDER=openai"
+            )
+        if not settings.EMBEDDING_OPENAI_MODEL:
+            raise ValueError(
+                "EMBEDDING_OPENAI_MODEL must be set when EMBEDDING_PROVIDER=openai"
+            )
+        return OpenAICompatibleEmbeddings(
+            base_url=settings.EMBEDDING_OPENAI_BASE_URL,
+            api_key=settings.EMBEDDING_OPENAI_API_KEY,
+            model=settings.EMBEDDING_OPENAI_MODEL,
+            dims=settings.EMBEDDING_DIMS,
+        )
+
+    # Default: ollama
     return CustomOllamaEmbeddings(
         base_url=settings.EMBEDDING_OLLAMA_BASE_URL,
         model=settings.EMBEDDING_OLLAMA_MODEL,
@@ -56,7 +83,7 @@ def create_llm(settings: Settings, callbacks: list | None = None) -> ChatOpenAI:
 
 def create_retriever(
     es_client: Any,
-    embeddings: CustomOllamaEmbeddings,
+    embeddings: LangChainEmbeddings,
     settings: Settings,
 ) -> UnifiedRetriever:
     """创建Retriever实例。
@@ -194,6 +221,8 @@ def create_curator_agent(
 
 __all__ = [
     "CustomOllamaEmbeddings",
+    "LangChainEmbeddings",
+    "OpenAICompatibleEmbeddings",
     "create_embeddings",
     "create_llm",
     "create_retriever",

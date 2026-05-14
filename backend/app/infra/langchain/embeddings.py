@@ -1,28 +1,29 @@
 
+from typing import Any
+
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel, PrivateAttr
 
-from app.infra.providers.embedding import OllamaEmbeddingProvider
+from app.infra.providers.embedding import (
+    EmbeddingProvider,
+    OllamaEmbeddingProvider,
+    OpenAICompatibleEmbeddingProvider,
+)
 
 
-class CustomOllamaEmbeddings(BaseModel, Embeddings):
-    """包装 OllamaEmbeddingProvider 到 LangChain Embeddings 接口"""
+class LangChainEmbeddings(BaseModel, Embeddings):
+    """Generic LangChain Embeddings wrapper for any EmbeddingProvider."""
 
-    base_url: str
-    model: str
-    dims: int
-    timeout: float = 60.0
+    provider_instance: Any = None
+    _provider: EmbeddingProvider | None = PrivateAttr(default=None)
 
-    _provider: OllamaEmbeddingProvider | None = PrivateAttr(default=None)
+    def model_post_init(self, __context: Any) -> None:
+        if self.provider_instance is not None:
+            self._provider = self.provider_instance
 
-    def _get_provider(self) -> OllamaEmbeddingProvider:
+    def _get_provider(self) -> EmbeddingProvider:
         if self._provider is None:
-            self._provider = OllamaEmbeddingProvider(
-                base_url=self.base_url,
-                model=self.model,
-                dims=self.dims,
-                timeout=self.timeout,
-            )
+            raise RuntimeError("No embedding provider configured")
         return self._provider
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -48,3 +49,39 @@ class CustomOllamaEmbeddings(BaseModel, Embeddings):
         if self._provider is not None:
             await self._provider.close()
             self._provider = None
+
+
+class CustomOllamaEmbeddings(LangChainEmbeddings):
+    """包装 OllamaEmbeddingProvider 到 LangChain Embeddings 接口（向后兼容）"""
+
+    base_url: str
+    model: str
+    dims: int
+    timeout: float = 60.0
+
+    def model_post_init(self, __context: Any) -> None:
+        self._provider = OllamaEmbeddingProvider(
+            base_url=self.base_url,
+            model=self.model,
+            dims=self.dims,
+            timeout=self.timeout,
+        )
+
+
+class OpenAICompatibleEmbeddings(LangChainEmbeddings):
+    """包装 OpenAICompatibleEmbeddingProvider 到 LangChain Embeddings 接口"""
+
+    base_url: str
+    api_key: str
+    model: str
+    dims: int
+    timeout: float = 60.0
+
+    def model_post_init(self, __context: Any) -> None:
+        self._provider = OpenAICompatibleEmbeddingProvider(
+            base_url=self.base_url,
+            api_key=self.api_key,
+            model=self.model,
+            dims=self.dims,
+            timeout=self.timeout,
+        )

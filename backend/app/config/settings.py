@@ -40,9 +40,12 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_HEADERS: str = ""  # JSON string of extra headers, e.g. '{"User-Agent": "curl/8.5.0"}'
 
-    EMBEDDING_PROVIDER: str = "ollama"
+    EMBEDDING_PROVIDER: str = "ollama"  # ollama, openai
     EMBEDDING_OLLAMA_BASE_URL: str = "http://localhost:11434"
     EMBEDDING_OLLAMA_MODEL: str = "nomic-embed-text"
+    EMBEDDING_OPENAI_BASE_URL: str = ""
+    EMBEDDING_OPENAI_API_KEY: str = ""
+    EMBEDDING_OPENAI_MODEL: str = ""
 
     ELASTICSEARCH_INDEX: str = "museai_chunks_v1"
     EMBEDDING_DIMS: int = 768
