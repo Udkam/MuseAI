@@ -267,7 +267,7 @@ async def bootstrap_admin(email: str, password: str) -> None:
 # ---------------------------------------------------------------------------
 
 def seed_dev_data() -> None:
-    """Seed development test data (exhibits, test user, etc.)."""
+    """Seed development test data (prompts, personas, halls, exhibits, test user)."""
     scripts_dir = os.path.dirname(__file__)
     project_root = os.path.join(scripts_dir, "..")
 
@@ -279,6 +279,15 @@ def seed_dev_data() -> None:
     )
     if result.returncode != 0:
         print("  Warning: Failed to seed dev user (non-fatal).")
+
+    # Seed prompts, personas, and halls (pure DB, no external deps)
+    print("  Seeding prompts, personas, and halls...")
+    result = subprocess.run(
+        [sys.executable, os.path.join(scripts_dir, "seed_prompts_and_personas.py")],
+        cwd=project_root,
+    )
+    if result.returncode != 0:
+        print("  Warning: Failed to seed prompts/personas/halls (non-fatal).")
 
     # Seed exhibits (this also creates the ES index internally)
     print("  Seeding exhibit data...")
