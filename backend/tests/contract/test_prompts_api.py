@@ -105,7 +105,7 @@ def mock_prompt_cache():
 
     cache = MagicMock()
     cache.get = AsyncMock()
-    cache.refresh = MagicMock()
+    cache.refresh = AsyncMock()
     cache.get_all_keys = MagicMock(return_value=["test_prompt"])
     cache.set_repository = MagicMock()
     cache.load_all = AsyncMock()

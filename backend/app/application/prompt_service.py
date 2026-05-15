@@ -121,7 +121,7 @@ class PromptService:
         )
 
         # Refresh the cache with the updated prompt
-        self._cache.refresh(prompt)
+        await self._cache.refresh(prompt)
 
         logger.info(f"Updated prompt '{key}' by {changed_by}")
         return prompt
@@ -189,7 +189,7 @@ class PromptService:
         )
 
         # Refresh the cache with the rolled-back prompt
-        self._cache.refresh(prompt)
+        await self._cache.refresh(prompt)
 
         logger.info(f"Rolled back prompt '{key}' to version {version} by {changed_by}")
         return prompt
@@ -207,7 +207,7 @@ class PromptService:
             # Reload single prompt
             prompt = await self._repository.get_by_key(key)
             if prompt is not None:
-                self._cache.refresh(prompt)
+                await self._cache.refresh(prompt)
                 logger.info(f"Reloaded prompt '{key}' into cache")
             else:
                 # Prompt doesn't exist or is inactive, remove from cache
@@ -250,7 +250,7 @@ class PromptService:
         )
 
         # Add the new prompt to cache (it's active by default)
-        self._cache.refresh(prompt)
+        await self._cache.refresh(prompt)
 
         logger.info(f"Created prompt '{key}' in category '{category}'")
         return prompt

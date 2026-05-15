@@ -63,7 +63,21 @@ class VoicePreviewResponse(BaseModel):
     format: str = "wav"
 
 
+def _normalize_variables(variables: list) -> list[dict[str, str]]:
+    """Normalize variables to list of dicts format."""
+    if not variables:
+        return []
+    result = []
+    for v in variables:
+        if isinstance(v, str):
+            result.append({"name": v, "description": ""})
+        elif isinstance(v, dict):
+            result.append(v)
+    return result
+
+
 def _persona_to_response(prompt: Prompt) -> TtsPersonaResponse:
+    normalized = _normalize_variables(prompt.variables)
     return TtsPersonaResponse(
         id=prompt.id.value,
         key=prompt.key,
@@ -71,9 +85,9 @@ def _persona_to_response(prompt: Prompt) -> TtsPersonaResponse:
         description=prompt.description,
         category=prompt.category,
         content=prompt.content,
-        voice=extract_voice(prompt.variables),
-        voice_description=extract_voice_description(prompt.variables),
-        variables=prompt.variables,
+        voice=extract_voice(normalized),
+        voice_description=extract_voice_description(normalized),
+        variables=normalized,
         is_active=prompt.is_active,
         current_version=prompt.current_version,
         created_at=prompt.created_at.isoformat(),
@@ -161,7 +175,7 @@ async def update_tts_persona(
             detail=f"TTS persona not found: {persona}",
         ) from None
 
-    prompt_cache.refresh(prompt)
+    await prompt_cache.refresh(prompt)
     return _persona_to_response(prompt)
 
 

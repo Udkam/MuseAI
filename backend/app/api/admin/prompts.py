@@ -72,6 +72,22 @@ class ReloadResponse(BaseModel):
     message: str
 
 
+def _normalize_variables(variables: list) -> list[dict[str, str]]:
+    """Normalize variables to list of dicts format.
+
+    Handles both legacy list[str] format and current list[dict] format.
+    """
+    if not variables:
+        return []
+    result = []
+    for v in variables:
+        if isinstance(v, str):
+            result.append({"name": v, "description": ""})
+        elif isinstance(v, dict):
+            result.append(v)
+    return result
+
+
 def _prompt_to_response(prompt: Prompt) -> PromptResponse:
     """Convert Prompt entity to response model."""
     return PromptResponse(
@@ -81,7 +97,7 @@ def _prompt_to_response(prompt: Prompt) -> PromptResponse:
         description=prompt.description,
         category=prompt.category,
         content=prompt.content,
-        variables=prompt.variables,
+        variables=_normalize_variables(prompt.variables),
         is_active=prompt.is_active,
         current_version=prompt.current_version,
         created_at=prompt.created_at.isoformat(),
@@ -206,7 +222,7 @@ async def update_prompt(
         ) from None
 
     # Refresh cache
-    prompt_cache.refresh(prompt)
+    await prompt_cache.refresh(prompt)
 
     return _prompt_to_response(prompt)
 
@@ -315,7 +331,7 @@ async def rollback_to_version(
         ) from None
 
     # Refresh cache
-    prompt_cache.refresh(prompt)
+    await prompt_cache.refresh(prompt)
 
     return _prompt_to_response(prompt)
 
@@ -350,7 +366,7 @@ async def reload_prompt(
             detail=f"Prompt not found: {key}",
         )
 
-    prompt_cache.refresh(prompt)
+    await prompt_cache.refresh(prompt)
 
     return ReloadResponse(
         status="success",

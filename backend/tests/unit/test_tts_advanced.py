@@ -55,7 +55,7 @@ def _create_app():
     app.include_router(router, prefix="/api/v1")
 
     mock_cache = MagicMock()
-    mock_cache.refresh = MagicMock()
+    mock_cache.refresh = AsyncMock()
 
     async def override_session():
         yield AsyncMock()
