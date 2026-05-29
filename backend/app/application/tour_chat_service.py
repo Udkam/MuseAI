@@ -250,9 +250,10 @@ async def _stream_rag(
     perf_log: Any = None,
     trace_id: str | None = None,
 ) -> AsyncGenerator[tuple[str, str | None], None]:
-    # ── RAG pipeline (rewrite → retrieve → merge → rerank → filter → evaluate → generate) ──
+    # ── RAG pipeline (rewrite → retrieve → merge → rerank → filter → evaluate) ──
+    # skip_generate=True: generate node is a no-op, we stream via llm_provider below.
     _t = time.perf_counter()
-    result = await rag_agent.run(message, system_prompt=system_prompt, trace_id=trace_id)
+    result = await rag_agent.run(message, system_prompt=system_prompt, trace_id=trace_id, skip_generate=True)
     _rag_ms = int((time.perf_counter() - _t) * 1000)
     if perf_log is not None:
         perf_log.bind(stage="rag_pipeline", duration_ms=_rag_ms, ok=True, perf=True).info(

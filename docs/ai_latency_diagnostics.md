@@ -1,6 +1,6 @@
 # AI 回复延迟诊断指南
 
-> 适用版本：Stage 8D Batch 1（2026-05-29 埋点版本）  
+> 适用版本：Stage 8D Batch 2（2026-05-29 skip_generate 优化版）  
 > 相关文件：`app/application/tour_chat_service.py`、`app/infra/langchain/agents.py`
 
 ---
@@ -68,7 +68,7 @@
 | `filter` | agents.py | 动态文档过滤（本地计算） | < 10ms | — |
 | `evaluate` | agents.py | 检索质量评分（本地计算） | < 5ms | — |
 | `transform` | agents.py | 查询转换（仅低质量检索时触发，含 LLM） | 0ms 或 300–800ms | 频繁触发 → 知识库覆盖不足 |
-| `generate_node` | agents.py | RAG 内部 LLM 非流式调用（**结果被丢弃**，见 §4） | 3000–30000ms | **这是当前最大浪费点** |
+| `generate_node` | agents.py | tour chat 场景：**已跳过**（`skipped=True duration_ms=0ms`）；其他流程仍执行 LLM | 0ms（tour）/ 3000–30000ms（其他） | tour 场景若此处出现 duration_ms > 100ms，说明 skip_generate 未生效 |
 | `rag_run_total` | agents.py | 以上所有节点的总耗时 | — | 等于各节点之和 |
 | `rag_pipeline` | tour_chat_service | 与 rag_run_total 相同，从调用侧测量 | — | 应与 rag_run_total 接近 |
 | `prompt_build` | tour_chat_service | 组装最终 LLM prompt（本地，含 prompt_gateway） | < 100ms | > 500ms → Redis/DB prompt 缓存慢 |
@@ -80,49 +80,63 @@
 
 ---
 
-## 4. 已知重大问题：双重 LLM 调用
+## 4. 已修复：双重 LLM 调用（Stage 8D Batch 2）
 
-**这是当前 >1 分钟延迟的最可能根因。**
+**修复日期：2026-05-29**
 
-### 现象
-
-每次请求会触发**两次** LLM 调用：
+### 修复前现象（已消除）
 
 ```
 请求进入
-  │
-  ├─ rag_agent.run()  ←── LLM 调用 #1（非流式）
-  │    └─ generate_node  [perf] generate_node duration_ms=18000ms  ← 约 18 秒
-  │         result["answer"] = "..."  ← 这个结果被丢弃，从未使用
-  │
-  ├─ _stream_rag() 组装 prompt（与 generate_node 使用相同 context）
-  │
-  └─ llm_provider.generate_stream()  ←── LLM 调用 #2（流式）
-       [perf] llm_stream duration_ms=15000ms  ← 用户看到的内容
+  ├─ rag_agent.run()  ←── LLM 调用 #1（非流式，~18s，结果被丢弃）
+  └─ llm_provider.generate_stream()  ←── LLM 调用 #2（流式，~15s）
+  [perf] total  duration_ms=40000ms
 ```
 
-### 日志特征
+### 修复后流程
 
-当你看到：
 ```
-[perf] generate_node  duration_ms=18000ms  ok=True
-[perf] rag_pipeline   duration_ms=22000ms  ok=True   ← generate_node 占了绝大部分
-[perf] llm_stream     duration_ms=15000ms  ok=True   ← 第二次
-[perf] total          duration_ms=40000ms  ok=True   ← ≈ 22s + 15s + 其他
+请求进入
+  ├─ rag_agent.run(skip_generate=True)
+  │    └─ generate_node  [perf] generate_node  skipped=True  duration_ms=0ms
+  │         ← 跳过 LLM 调用，保留检索上下文
+  │
+  └─ llm_provider.generate_stream()  ←── 唯一 LLM 调用（流式，~8-15s）
+  [perf] total  duration_ms=~15000ms  ← 节省约 15-25s
 ```
 
-这意味着 LLM 被调用了两次，用户等待约 40 秒，但只有第二次的结果有意义。
+### 修复方案
 
-### 根因
+- `RAGState` 新增 `skip_generate: bool` 字段
+- `RAGAgent.generate()` 在 `skip_generate=True` 时立即返回，不调用 LLM
+- `RAGAgent.run()` 新增 `skip_generate: bool = False` 参数（默认 False，其他调用方不受影响）
+- `tour_chat_service._stream_rag()` 调用 `rag_agent.run(..., skip_generate=True)`
 
-`app/infra/langchain/agents.py` 的 `generate()` 节点使用 `self.llm.ainvoke()` 生成完整回答，存入 `state["answer"]`。但 `_stream_rag()` 在 `rag_agent.run()` 返回后，忽略 `state["answer"]`，用相同 context 和 prompt 再次调用 `llm_provider.generate_stream()`。
+### 修复后 perf 日志特征
 
-### 下一步（本次不实施）
+```
+[perf] rewrite           duration_ms=0ms    ok=True
+[perf] retrieve          duration_ms=1800ms ok=True
+[perf] merge             duration_ms=120ms  ok=True
+[perf] rerank            duration_ms=450ms  ok=True
+[perf] filter            duration_ms=2ms    ok=True
+[perf] evaluate          duration_ms=1ms    ok=True
+[perf] generate_node     skipped=True       duration_ms=0ms   ← 不再有 LLM 调用
+[perf] rag_run_total     duration_ms=2400ms ok=True           ← 节省 ~18s
+[perf] rag_pipeline      duration_ms=2410ms ok=True
+[perf] prompt_build      duration_ms=8ms    ok=True
+[perf] llm_stream_start
+[perf] first_token       elapsed_ms=~3000ms                   ← 用户等待约 3 秒
+[perf] llm_stream        duration_ms=~10000ms ok=True
+[perf] total             duration_ms=~13000ms ok=True         ← 从 40s → 13s
+```
 
-可选修复方向：
-1. **完全移除 `generate()` 节点**中的 LLM 调用，只保留 context 聚合逻辑，让 `_stream_rag()` 负责生成
-2. **让 `_stream_rag()` 直接复用 `state["answer"]`**（需要 generate 节点支持流式或分段输出）
-3. **评估 `generate()` 节点是否有其他调用路径**（如非 tour 的 chat 流）
+### 验证方法
+
+运行后查看：
+- `generate_node` 是否出现 `skipped=True duration_ms=0ms`（说明修复生效）
+- `rag_pipeline` 是否从 ~22s 缩短到 ~3s 以内
+- `total` 是否从 ~40s 缩短到 ~15s 以内
 
 ---
 
@@ -187,10 +201,13 @@ grep "\[perf\]" logs/app.log | grep "trace_id=a3f2c1d0"
 根据日志中各阶段的 `duration_ms`，对照以下决策树：
 
 ```
-total > 30s?
-├─ YES → 看 generate_node duration_ms
-│        ├─ > 5000ms → 双重 LLM 调用问题（见 §4），修复优先级：P0
-│        └─ ≈ 0ms（不存在）→ 看 rag_pipeline
+generate_node 是否 skipped=True？
+├─ NO（duration_ms > 100ms）→ skip_generate 未生效，检查 tour_chat_service._stream_rag() 调用
+│
+total > 20s（skip_generate 已生效后）？
+├─ YES → 看 retrieve duration_ms
+│        ├─ > 3000ms → ES 慢或 embedding 超时（见 §7）
+│        └─ < 3000ms → 看 llm_stream duration_ms：> 15s → LLM 冷启动或网络慢
 │
 total < 15s?
 ├─ 看 first_token elapsed_ms
@@ -229,7 +246,7 @@ transform 出现？
 
 - [ ] `session_loaded` < 50ms（DB 正常）
 - [ ] `tts_config` ok=True（TTS 配置正常）
-- [ ] `generate_node` 是否存在（若存在且 > 5000ms，立即确认 §4 的双重调用问题）
+- [ ] `generate_node` 是否出现 `skipped=True duration_ms=0ms`（若出现 `duration_ms > 100ms`，说明 skip_generate 未生效）
 - [ ] `retrieve` < 2000ms（ES + embedding 正常）
 - [ ] `rerank` < 1000ms（rerank 服务正常）
 - [ ] `transform` 是否出现（出现 = 检索质量不足）

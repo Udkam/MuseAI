@@ -42,6 +42,7 @@ class RAGState(TypedDict):
     answer: str
     conversation_history: list[dict[str, str]]
     system_prompt: str
+    skip_generate: bool  # when True, generate node is a no-op (caller handles LLM streaming)
 
 
 class RAGAgent:
@@ -437,9 +438,22 @@ class RAGAgent:
 
     async def generate(self, state: RAGState) -> dict[str, Any]:
         """生成答案。
-        NOTE: In the tour chat flow this LLM call's result is NOT used — _stream_rag
-        makes a second generate_stream() call. See ai_latency_diagnostics.md §4.
+
+        当 skip_generate=True 时（tour chat 场景），跳过 LLM 调用：
+        检索结果已经在 state 中，由 tour_chat_service._stream_rag() 负责最终流式生成。
+        其他调用方（chat_service 等）默认 skip_generate=False，行为不变。
         """
+        if state.get("skip_generate", False):
+            logger.bind(
+                trace_id=self._perf_trace_id or "",
+                stage="generate_node",
+                duration_ms=0,
+                ok=True,
+                skipped=True,
+                perf=True,
+            ).info("[perf] generate_node  skipped=True  duration_ms=0ms")
+            return {"answer": ""}
+
         _t = time.perf_counter()
         try:
             docs = (
@@ -478,6 +492,7 @@ class RAGAgent:
         conversation_history: list[dict[str, str]] | None = None,
         system_prompt: str | None = None,
         trace_id: str | None = None,
+        skip_generate: bool = False,
     ) -> RAGState:
         """运行RAG流程。
 
@@ -486,6 +501,8 @@ class RAGAgent:
             conversation_history: 对话历史（可选）
             system_prompt: 自定义系统提示词（可选，用于导览等场景）
             trace_id: 请求链路追踪 ID，用于节点级 [perf] 日志关联
+            skip_generate: 若为 True，generate 节点跳过 LLM 调用（tour chat 场景，
+                           由调用方自行负责流式生成）。其他场景保持 False。
 
         Returns:
             最终状态
@@ -505,6 +522,7 @@ class RAGAgent:
             "answer": "",
             "conversation_history": conversation_history or [],
             "system_prompt": system_prompt or "",
+            "skip_generate": skip_generate,
         }
         result = await self._graph.ainvoke(initial_state)
         self._perf("rag_run_total", int((time.perf_counter() - _t) * 1000))
