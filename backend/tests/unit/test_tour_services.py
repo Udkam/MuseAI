@@ -574,8 +574,9 @@ def test_select_identity_tags_all_S():
 
 def test_get_report_theme():
     assert get_report_theme("A") == "archaeology"
-    assert get_report_theme("B") == "village"
-    assert get_report_theme("C") == "homework"
+    assert get_report_theme("B") == "field_study"
+    assert get_report_theme("C") == "history_inquiry"
+    assert get_report_theme("D") == "artifact_study"
 
 
 # ===================================================================

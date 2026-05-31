@@ -355,16 +355,16 @@ PROMPTS: list[dict] = [
     # ── Tour TTS Personas ───────────────────────────────────────
     {
         "key": "tour_tts_persona_a",
-        "name": "Tour TTS - Archaeologist",
+        "name": "Tour TTS - Archaeology Researcher",
         "category": "tts",
-        "description": "考古学家语音人设：沉稳浑厚的中年男性声音",
+        "description": "考古研究员语音人设：沉稳清晰的中年男性声音",
         "variables": [
             {"name": "__voice__", "description": "白桦"},
             {"name": "__voice_description__", "description": "五十多岁的中年男性，声音沉稳浑厚，带有学术气息"},
         ],
         "content": (
-            "【角色】五十多岁的资深考古学家，声音沉稳浑厚，带有学术气息。"
-            "常年在田野考古，说话沉稳有力，偶尔带出专业术语但从不卖弄。\n"
+            "【角色】五十多岁的考古研究员，声音沉稳浑厚，带有学术气息。"
+            "常年在田野考古，说话清晰有力，重视证据与推理边界，偶尔带出专业术语但从不卖弄。\n"
             "【场景】在博物馆展厅中，面对感兴趣的参观者，分享自己多年的考古发现与文物背后的故事。\n"
             "【指导】\n"
             "- 语速：适中偏慢，像在课堂上娓娓道来，重要细节处会刻意放慢\n"
@@ -375,64 +375,81 @@ PROMPTS: list[dict] = [
     },
     {
         "key": "tour_tts_persona_b",
-        "name": "Tour TTS - Villager",
+        "name": "Tour TTS - Study Tour Recorder",
         "category": "tts",
-        "description": "老村民语音人设：沙哑沧桑的老年男性声音",
+        "description": "研学记录员语音人设：清晰亲切的青年女性声音",
         "variables": [
             {"name": "__voice__", "description": "苏打"},
-            {"name": "__voice_description__", "description": "六十多岁的老年男性，声音沙哑沧桑，带有北方乡音"},
+            {"name": "__voice_description__", "description": "二十多岁的青年声音，清晰亲切，适合研学引导"},
         ],
         "content": (
-            "【角色】六十多岁的老村民，声音沙哑沧桑，带有北方乡音。"
-            "一辈子生活在这片土地上，对家乡的历史和传说了如指掌，说话朴实接地气。\n"
-            "【场景】在村口老槐树下，或者博物馆的民俗展区，向来访的客人讲述过去的故事和家乡的记忆。\n"
+            "【角色】二十多岁的研学记录员，声音清晰亲切，适合研学引导。"
+            "擅长把展厅内容整理成观察任务、笔记要点和可复盘的小结。\n"
+            "【场景】在博物馆展厅中，陪研学学生和参观者边看边记，形成自己的证据链。\n"
             "【指导】\n"
-            "- 语速：稍慢，像老人家拉家常，有停顿和回忆的间隙\n"
-            "- 气息：略带喘息感，偶尔叹气，带着岁月的沉淀\n"
-            "- 咬字：带轻微北方口音，平翘舌略混，儿化音自然\n"
-            "- 情绪：怀旧温暖，讲到苦难处声音低沉，讲到开心处爽朗大笑"
+            "- 语速：适中偏慢，像在认真讲一件生活中的事\n"
+            "- 气息：平稳自然，重点处稍作停顿\n"
+            "- 咬字：清楚朴实，避免夸张的表演腔\n"
+            "- 情绪：亲切专注，帮助用户把展品整理成清楚的研学记录"
         ),
     },
     {
         "key": "tour_tts_persona_c",
-        "name": "Tour TTS - Teacher",
+        "name": "Tour TTS - History Inquirer",
         "category": "tts",
-        "description": "历史老师语音人设：清脆明亮的年轻女性声音",
+        "description": "历史追问者语音人设：清晰理性的年轻女性声音",
         "variables": [
             {"name": "__voice__", "description": "茉莉"},
-            {"name": "__voice_description__", "description": "三十多岁的年轻女性，声音清脆明亮，富有感染力"},
+            {"name": "__voice_description__", "description": "三十多岁的年轻女性，声音清晰理性，富有引导感"},
         ],
         "content": (
-            "【角色】三十多岁的年轻历史老师，声音清脆明亮，富有感染力。"
-            "讲课生动有趣，善于用比喻和提问吸引学生注意力，是学生最喜欢的老师。\n"
-            "【场景】在博物馆中带领学生参观，或者面对参观者，用生动活泼的方式讲解历史知识。\n"
+            "【角色】三十多岁的历史追问者，声音清晰理性，富有引导感。"
+            "擅长把半坡文物和遗址放进文明起源、共同体和公共生活等大问题中追问。\n"
+            "【场景】在博物馆展厅中，陪历史爱好者比较证据，形成自己的解释。\n"
             "【指导】\n"
-            "- 语速：适中偏快，节奏明快，像在课堂上激情授课\n"
-            "- 气息：充沛有力，偶尔在提问时故意停顿制造悬念\n"
-            "- 咬字：清晰利落，关键词汇会加重语气，像划重点\n"
-            "- 情绪：热情洋溢，充满好奇心，讲到有趣处会忍不住笑出来"
+            "- 语速：适中，逻辑清楚，留出观察和思考的停顿\n"
+            "- 气息：稳定，有条理，适合连续讲解空间关系\n"
+            "- 咬字：清晰利落，关键词汇会适度加重\n"
+            "- 情绪：理性而有好奇心，用问题引导但不过度反问"
+        ),
+    },
+    {
+        "key": "tour_tts_persona_d",
+        "name": "Tour TTS - Artifact Researcher",
+        "category": "tts",
+        "description": "器物研究员语音人设：稳实耐心的中年男性声音",
+        "variables": [
+            {"name": "__voice__", "description": "苏打"},
+            {"name": "__voice_description__", "description": "四十多岁的中年男性，声音稳实耐心，带有手艺人的专注感"},
+        ],
+        "content": (
+            "【角色】四十多岁的器物研究员，声音稳实耐心，带有研究者的专注感。"
+            "熟悉材料、器形、纹饰、制作痕迹、使用痕迹和保存状态，讲解时重视器物细读。\n"
+            "【场景】在文物、陶窑和工坊相关展区中，陪参观者从细节理解半坡文物。\n"
+            "【指导】\n"
+            "- 语速：适中偏慢，像边观察边解释工艺步骤\n"
+            "- 气息：平稳扎实，强调关键工序时略微放慢\n"
+            "- 咬字：朴实清楚，工艺术语要说得容易懂\n"
+            "- 情绪：专注、耐心，对手艺和纹样细节保持温和的兴致"
         ),
     },
 ]
 
 
 # ────────────────────────────────────────────────────────────────
-# Hall definitions (from init_exhibits.py HALLS_BY_FLOOR)
+# Hall definitions (derived from 展厅信息.docx)
 # ────────────────────────────────────────────────────────────────
 
 HALLS: list[dict] = [
-    # Floor 1
-    {"slug": "bronze-a", "name": "青铜馆A厅", "description": "商周青铜礼器与兵器，展示中国青铜时代的铸造技艺与礼制文明", "floor": 1, "estimated_duration_minutes": 40, "display_order": 1},
-    {"slug": "bronze-b", "name": "青铜馆B厅", "description": "春秋战国至汉代青铜器，展示青铜艺术从神秘向写实的转变", "floor": 1, "estimated_duration_minutes": 35, "display_order": 2},
-    {"slug": "ceramics", "name": "陶瓷馆", "description": "从原始陶器到明清官窑，纵览中国陶瓷万年发展史", "floor": 1, "estimated_duration_minutes": 45, "display_order": 3},
-    # Floor 2
-    {"slug": "painting-a", "name": "书画馆A厅", "description": "唐宋绘画珍品，展示中国绘画艺术的巅峰成就", "floor": 2, "estimated_duration_minutes": 40, "display_order": 4},
-    {"slug": "painting-b", "name": "书画馆B厅", "description": "元明清书画作品，展示文人画的演变与传承", "floor": 2, "estimated_duration_minutes": 35, "display_order": 5},
-    {"slug": "jade", "name": "玉器馆", "description": "从新石器时代到清代的玉器精品，展示中国玉文化的深厚底蕴", "floor": 2, "estimated_duration_minutes": 40, "display_order": 6},
-    # Floor 3
-    {"slug": "gold-silver", "name": "金银器馆", "description": "唐代何家村窖藏至清代宫廷金银器，展示金属工艺的极致之美", "floor": 3, "estimated_duration_minutes": 35, "display_order": 7},
-    {"slug": "sculpture", "name": "雕塑馆", "description": "从汉代石刻到清代牙雕，展示中国雕塑艺术的多元面貌", "floor": 3, "estimated_duration_minutes": 35, "display_order": 8},
-    {"slug": "special", "name": "特展馆", "description": "临时展览与主题特展，定期更换展览内容", "floor": 3, "estimated_duration_minutes": 30, "display_order": 9},
+    {"slug": "basic-exhibition-hall", "name": "基本陈列展厅", "description": "以半坡遗址相关考古发现与研究成果为主线，系统展示半坡文化的生活形态、生产方式与社会结构。", "floor": 1, "estimated_duration_minutes": 40, "display_order": 1},
+    {"slug": "site-protection-hall", "name": "遗址保护大厅", "description": "强调边保护边展示，呈现墓葬、地面圆形房屋、烧制作坊、灶具灶台等关键遗存。", "floor": 1, "estimated_duration_minutes": 35, "display_order": 2},
+    {"slug": "temporary-hall-1", "name": "临展厅一", "description": "承载策划性的短期或阶段性展览，具体主题和展品视当期安排而定。", "floor": 1, "estimated_duration_minutes": 20, "display_order": 3},
+    {"slug": "temporary-hall-2", "name": "临展厅二", "description": "与临展厅一共同负责轮换展出，具体内容需由馆方按当期展览更新。", "floor": 1, "estimated_duration_minutes": 20, "display_order": 4},
+    {"slug": "banpo-girl-sculpture", "name": "半坡姑娘雕塑", "description": "以半坡姑娘为代表性形象进行艺术化再现，是观众合影点与文化符号。", "floor": 1, "estimated_duration_minutes": 8, "display_order": 5},
+    {"slug": "prehistoric-workshop", "name": "史前工坊", "description": "以工坊形式让观众参与史前生活相关体验，把考古知识转化为可参与的学习过程。", "floor": 1, "estimated_duration_minutes": 25, "display_order": 6},
+    {"slug": "education-center", "name": "教研中心", "description": "面向青少年和公众教育活动，组织课堂、研学和主题研究型活动。", "floor": 1, "estimated_duration_minutes": 20, "display_order": 7},
+    {"slug": "peony-garden", "name": "牡丹园", "description": "以牡丹为核心的园林景观区域，兼具观赏与休闲功能。", "floor": 1, "estimated_duration_minutes": 15, "display_order": 8},
+    {"slug": "kiln-hall", "name": "陶窑展厅", "description": "以陶器如何被制作出来为核心叙事，展示半坡时期制陶与烧制工艺。", "floor": 1, "estimated_duration_minutes": 25, "display_order": 9},
 ]
 
 

@@ -93,7 +93,12 @@ def select_identity_tags(radar_scores: dict) -> list[str]:
 
 
 def get_report_theme(persona: str) -> str:
-    return {"A": "archaeology", "B": "village", "C": "homework"}.get(persona, "archaeology")
+    return {
+        "A": "archaeology",
+        "B": "field_study",
+        "C": "history_inquiry",
+        "D": "artifact_study",
+    }.get(persona, "archaeology")
 
 
 def _ensure_aware(dt):
@@ -224,10 +229,15 @@ def _pick_one_liner(stats: dict, persona: str) -> str:
 
 
 async def _generate_one_liner_llm(llm_provider: Any, persona: str, stats: dict) -> str:
-    persona_names = {"A": "考古队长", "B": "半坡原住民", "C": "历史老师"}
+    persona_names = {
+        "A": "考古研究员",
+        "B": "研学记录员",
+        "C": "历史追问者",
+        "D": "器物研究员",
+    }
     prompt = (
         f"根据以下游览数据，生成一句有感染力的'游览一句话'（15字以内），"
-        f"风格要符合{persona_names.get(persona, '考古队长')}的身份：\n"
+        f"风格要符合{persona_names.get(persona, '考古研究员')}的身份：\n"
         f"- 游览时长：{stats.get('total_duration_minutes', 0):.0f}分钟\n"
         f"- 提问次数：{stats.get('total_questions', 0)}\n"
         f"- 参观展品数：{stats.get('total_exhibits_viewed', 0)}\n"

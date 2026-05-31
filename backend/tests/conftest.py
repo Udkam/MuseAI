@@ -5,6 +5,17 @@ from unittest.mock import AsyncMock, MagicMock
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
+@pytest.fixture(autouse=True)
+def stable_test_settings(monkeypatch):
+    """Keep local .env development toggles from changing test expectations."""
+    from app.config.settings import reset_settings
+
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    reset_settings()
+    yield
+    reset_settings()
+
+
 @pytest.fixture
 async def db_session():
     """SQLite in-memory async session for contract/integration tests."""

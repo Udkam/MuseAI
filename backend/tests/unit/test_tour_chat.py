@@ -126,6 +126,12 @@ def test_build_system_prompt_persona_c():
     assert ASSUMPTION_CONTEXTS["C"] in prompt
 
 
+def test_build_system_prompt_persona_d():
+    prompt = build_system_prompt(persona="D", assumption="D")
+    assert PERSONA_PROMPTS["D"] in prompt
+    assert ASSUMPTION_CONTEXTS["D"] in prompt
+
+
 def test_build_system_prompt_with_hall():
     prompt = build_system_prompt(persona="A", assumption="A", hall="relic-hall")
     assert HALL_DESCRIPTIONS["relic-hall"] in prompt
@@ -174,11 +180,11 @@ def test_build_system_prompt_default_persona():
 
 
 def test_persona_prompts_have_all_keys():
-    assert set(PERSONA_PROMPTS.keys()) == {"A", "B", "C"}
+    assert set(PERSONA_PROMPTS.keys()) == {"A", "B", "C", "D"}
 
 
 def test_assumption_contexts_have_all_keys():
-    assert set(ASSUMPTION_CONTEXTS.keys()) == {"A", "B", "C"}
+    assert set(ASSUMPTION_CONTEXTS.keys()) == {"A", "B", "C", "D"}
 
 
 def test_hall_descriptions_have_expected_slugs():

@@ -308,7 +308,7 @@ class TestTTSService:
 
     @pytest.mark.asyncio
     async def test_get_tour_tts_config_all_personas(self):
-        for persona, voice in [("A", "白桦"), ("B", "苏打"), ("C", "茉莉")]:
+        for persona, voice in [("A", "白桦"), ("B", "苏打"), ("C", "茉莉"), ("D", "苏打")]:
             gateway = AsyncMock()
             prompt = _make_prompt(
                 f"tour_tts_persona_{persona.lower()}",

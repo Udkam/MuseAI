@@ -33,11 +33,14 @@ from app.infra.postgres.models import Exhibit, Hall
 
 router = APIRouter(prefix="/tour", tags=["tour"])
 
+TourPersonaCode = Literal["A", "B", "C", "D"]
+TourAssumptionCode = Literal["A", "B", "C", "D"]
+
 
 class TourSessionCreate(BaseModel):
-    interest_type: Literal["A", "B", "C"]
-    persona: Literal["A", "B", "C"]
-    assumption: Literal["A", "B", "C"]
+    interest_type: TourPersonaCode
+    persona: TourPersonaCode
+    assumption: TourAssumptionCode
     guest_id: str | None = None
 
 
@@ -45,9 +48,9 @@ class TourSessionUpdate(BaseModel):
     current_hall: str | None = None
     current_exhibit_id: str | None = None
     status: Literal["onboarding", "opening", "touring", "completed"] | None = None
-    interest_type: Literal["A", "B", "C"] | None = None
-    persona: Literal["A", "B", "C"] | None = None
-    assumption: Literal["A", "B", "C"] | None = None
+    interest_type: TourPersonaCode | None = None
+    persona: TourPersonaCode | None = None
+    assumption: TourAssumptionCode | None = None
 
 
 class TourEventItem(BaseModel):
@@ -92,22 +95,23 @@ class TourHallListResponse(BaseModel):
 
 LEGACY_HALLS_DATA = [
     TourHallItem(
-        slug="relic-hall",
-        name="出土文物展厅",
-        description=(
-            "陈列半坡遗址出土的陶器、石器、骨器等文物，"
-            "展示6000年前半坡人的生存技术和精神世界。"
-        ),
+        slug="basic-exhibition-hall",
+        name="基本陈列展厅",
+        description="系统展示半坡文化的生活形态、生产方式与社会结构。",
         exhibit_count=0,
-        estimated_duration_minutes=30,
+        estimated_duration_minutes=40,
     ),
     TourHallItem(
-        slug="site-hall",
+        slug="site-protection-hall",
         name="遗址保护大厅",
-        description=(
-            "保留半坡遗址的居住区、制陶区和墓葬区原貌，"
-            "展示圆形和方形半地穴式房屋结构。"
-        ),
+        description="强调原址呈现与保护展示，呈现墓葬、房屋、作坊和灶具灶台等遗存。",
+        exhibit_count=0,
+        estimated_duration_minutes=35,
+    ),
+    TourHallItem(
+        slug="kiln-hall",
+        name="陶窑展厅",
+        description="展示半坡时期制陶与烧制工艺，解释从制坯到入窑烧成的流程。",
         exhibit_count=0,
         estimated_duration_minutes=25,
     ),

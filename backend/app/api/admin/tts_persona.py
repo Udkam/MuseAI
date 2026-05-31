@@ -21,7 +21,7 @@ from app.infra.postgres.adapters import PostgresPromptRepository
 
 router = APIRouter(prefix="/admin/tts", tags=["admin-tts"])
 
-VALID_PERSONAS = {"a", "b", "c"}
+VALID_PERSONAS = {"a", "b", "c", "d"}
 PERSONA_KEY_PREFIX = "tour_tts_persona_"
 
 
@@ -99,7 +99,7 @@ def _validate_persona(persona: str) -> str:
     if persona not in VALID_PERSONAS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid persona: {persona}. Must be one of: a, b, c",
+            detail=f"Invalid persona: {persona}. Must be one of: a, b, c, d",
         )
     return f"{PERSONA_KEY_PREFIX}{persona}"
 

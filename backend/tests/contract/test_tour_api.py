@@ -159,6 +159,27 @@ async def test_create_tour_session_authenticated(override_dependencies, auth_tok
 
 
 @pytest.mark.asyncio
+async def test_create_tour_session_persona_d(override_dependencies):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/tour/sessions",
+            json={
+                "interest_type": "D",
+                "persona": "D",
+                "assumption": "D",
+                "guest_id": "guest-artifact-test",
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["interest_type"] == "D"
+    assert data["persona"] == "D"
+    assert data["assumption"] == "D"
+
+
+@pytest.mark.asyncio
 async def test_create_tour_session_returns_existing(override_dependencies, auth_token):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -467,26 +488,28 @@ async def test_complete_hall_all_visited(override_dependencies):
         session_id = created["id"]
         token = created["session_token"]
 
-        await client.patch(
-            f"/api/v1/tour/sessions/{session_id}",
-            json={"current_hall": "relic-hall", "status": "touring"},
-            headers={"X-Session-Token": token},
-        )
-        await client.post(
-            f"/api/v1/tour/sessions/{session_id}/complete-hall",
-            headers={"X-Session-Token": token},
-        )
+        fallback_halls = [
+            "basic-exhibition-hall",
+            "site-protection-hall",
+            "kiln-hall",
+        ]
 
-        await client.patch(
-            f"/api/v1/tour/sessions/{session_id}",
-            json={"current_hall": "site-hall"},
-            headers={"X-Session-Token": token},
-        )
-        complete_resp = await client.post(
-            f"/api/v1/tour/sessions/{session_id}/complete-hall",
-            headers={"X-Session-Token": token},
-        )
+        complete_resp = None
+        for index, hall in enumerate(fallback_halls):
+            await client.patch(
+                f"/api/v1/tour/sessions/{session_id}",
+                json={
+                    "current_hall": hall,
+                    "status": "touring" if index == 0 else None,
+                },
+                headers={"X-Session-Token": token},
+            )
+            complete_resp = await client.post(
+                f"/api/v1/tour/sessions/{session_id}/complete-hall",
+                headers={"X-Session-Token": token},
+            )
 
+    assert complete_resp is not None
     assert complete_resp.status_code == 200
     data = complete_resp.json()
     assert data["all_halls_visited"] is True
