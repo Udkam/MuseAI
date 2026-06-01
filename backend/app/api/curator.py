@@ -1,5 +1,6 @@
 # backend/app/api/curator.py
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
@@ -22,12 +23,32 @@ class PlanTourRequest(BaseModel):
     interests: list[str] | None = None
 
 
+class PlanTourRouteStep(BaseModel):
+    order: int
+    hall_slug: str
+    hall_name: str
+    title: str
+    reason: str
+    focus: str
+    estimated_minutes: int
+    suggested_questions: list[str]
+
+
+class PlanTourRoute(BaseModel):
+    source: Literal["curator"]
+    total_minutes: int
+    theme: str
+    summary: str
+    steps: list[PlanTourRouteStep]
+
+
 class PlanTourResponse(BaseModel):
     user_id: str
     available_time: int
     interests: list[str]
     visited_exhibit_ids: list[str]
     plan: str
+    route: PlanTourRoute
     session_id: str
 
 

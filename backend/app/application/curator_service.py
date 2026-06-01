@@ -1,11 +1,253 @@
 # backend/app/application/curator_service.py
+import re
 from typing import Any
 
+from app.application.hall_normalizer import CANONICAL_HALLS, hall_display_name, normalize_hall
 from app.application.ports.repositories import CuratorAgentPort
 from app.domain.exceptions import EntityNotFoundError
 
 from .exhibit_service import ExhibitService
 from .profile_service import ProfileService
+
+
+_PERSONA_ALIASES = {
+    "A": "A",
+    "B": "B",
+    "C": "C",
+    "D": "D",
+    "default": "B",
+    "student": "B",
+    "historian": "C",
+    "artifact": "D",
+    "artisan": "D",
+    "resident": "B",
+    "community": "C",
+}
+
+_ROUTE_PROFILES = {
+    "A": {
+        "theme": "考古研究路线",
+        "summary": "从代表性器物进入，再回到遗址和陶窑，用证据、遗迹和工艺流程建立可解释的半坡图景。",
+        "steps": [
+            {
+                "hall_slug": "basic-exhibition-hall",
+                "title": "先看核心证据",
+                "reason": "基本陈列展厅集中呈现半坡代表性器物，适合先建立文物证据框架。",
+                "focus": "关注器物形制、纹饰、出土背景与可支持的推断。",
+                "questions": ["哪些细节能作为考古证据？", "器物差异能说明什么？"],
+            },
+            {
+                "hall_slug": "site-protection-hall",
+                "title": "回到遗址现场",
+                "reason": "遗址保护大厅能把器物证据放回房屋、墓葬、作坊等空间关系中检验。",
+                "focus": "观察地层、遗迹位置、居住结构和公共空间线索。",
+                "questions": ["空间布局反映了怎样的社会组织？", "遗迹能验证哪些推断？"],
+            },
+            {
+                "hall_slug": "kiln-hall",
+                "title": "补上生产链条",
+                "reason": "陶窑展厅能说明陶器不是孤立展品，而是材料、火候和流程共同作用的结果。",
+                "focus": "观察制坯、干燥、入窑和烧成证据。",
+                "questions": ["陶窑结构说明了什么技术能力？", "烧成痕迹能怎样被解读？"],
+            },
+            {
+                "hall_slug": "prehistoric-workshop",
+                "title": "用操作理解技术",
+                "reason": "史前工坊能把考古证据转成可体验的技术问题，帮助理解制作难度。",
+                "focus": "把观察到的器物特征和手作流程互相对应。",
+                "questions": ["哪些步骤最考验经验？", "手作体验能帮助验证什么？"],
+            },
+        ],
+    },
+    "B": {
+        "theme": "研学记录路线",
+        "summary": "把参观拆成观察任务、记录点和复盘线索，方便形成可整理、可汇报的研学笔记。",
+        "steps": [
+            {
+                "hall_slug": "basic-exhibition-hall",
+                "title": "建立观察样本",
+                "reason": "先看基本陈列，能快速获得器物、生活和生产方式的核心样本。",
+                "focus": "记录展品名称、用途、材料和最能说明问题的细节。",
+                "questions": ["我应该先记录哪些信息？", "这些展品分别说明什么？"],
+            },
+            {
+                "hall_slug": "education-center",
+                "title": "整理研学问题",
+                "reason": "教研中心适合把看到的材料转化为问题清单和复盘框架。",
+                "focus": "把观察点整理成证据链、问题链和小结。",
+                "questions": ["怎样把观察整理成研学报告？", "哪些问题适合继续查证？"],
+            },
+            {
+                "hall_slug": "prehistoric-workshop",
+                "title": "用体验加深记录",
+                "reason": "史前工坊能把抽象的技术和劳动转化为可感知的体验。",
+                "focus": "记录动手环节、难点和与展品之间的对应关系。",
+                "questions": ["体验能补充哪些书面记录？", "制作难点说明了什么？"],
+            },
+            {
+                "hall_slug": "site-protection-hall",
+                "title": "补充空间证据",
+                "reason": "遗址空间能帮助研学记录从单件展品扩展到聚落生活。",
+                "focus": "记录房屋、墓葬和公共空间的相互位置。",
+                "questions": ["空间布局怎样进入笔记？", "遗址和器物如何互相印证？"],
+            },
+        ],
+    },
+    "C": {
+        "theme": "历史追问路线",
+        "summary": "从聚落空间出发，追问半坡人的社会组织、文明起源线索，以及这些问题与今天的关系。",
+        "steps": [
+            {
+                "hall_slug": "site-protection-hall",
+                "title": "从聚落提问",
+                "reason": "遗址保护大厅展示房屋、墓葬、作坊等空间关系，适合追问社会如何组织。",
+                "focus": "观察空间布局、公共生活和可能的分工线索。",
+                "questions": ["聚落布局说明了怎样的共同生活？", "哪些遗迹能反映社会规则？"],
+            },
+            {
+                "hall_slug": "basic-exhibition-hall",
+                "title": "用器物补充社会图景",
+                "reason": "基本陈列中的工具、陶器和装饰物能补充生活分工、审美和身份表达。",
+                "focus": "比较不同器物背后的生活方式和社会含义。",
+                "questions": ["器物差异反映了什么社会关系？", "审美和实用如何同时出现？"],
+            },
+            {
+                "hall_slug": "banpo-girl-sculpture",
+                "title": "连接人物想象",
+                "reason": "半坡姑娘雕塑适合把考古材料与公众记忆连接起来，但仍要区分事实与想象。",
+                "focus": "思考我们如何根据证据理解半坡人的形象。",
+                "questions": ["公众形象如何影响历史理解？", "哪些想象需要证据约束？"],
+            },
+            {
+                "hall_slug": "education-center",
+                "title": "形成自己的追问",
+                "reason": "最后把参观转化成问题：半坡为何重要，它和今天的公共生活有什么关系。",
+                "focus": "整理文明起源、社会组织和现实关联三类问题。",
+                "questions": ["半坡经验和今天有什么关系？", "我还想继续追问什么？"],
+            },
+        ],
+    },
+    "D": {
+        "theme": "器物观察路线",
+        "summary": "优先观察器形、材料、纹饰、工艺和使用痕迹，再用陶窑与工坊补足制作流程。",
+        "steps": [
+            {
+                "hall_slug": "basic-exhibition-hall",
+                "title": "先看器物成品",
+                "reason": "基本陈列展厅集中呈现代表性器物，适合先观察形制、纹饰、材料和使用痕迹。",
+                "focus": "比较器形、口沿、底部、纹饰和磨损位置。",
+                "questions": ["这类器物主要用来做什么？", "纹饰和痕迹能说明什么？"],
+            },
+            {
+                "hall_slug": "kiln-hall",
+                "title": "理解烧制工艺",
+                "reason": "陶窑展厅能解释陶器从泥料到成品的关键变化，补足工艺判断。",
+                "focus": "观察制坯、干燥、火候、窑炉结构和烧成痕迹。",
+                "questions": ["火候怎样影响陶器状态？", "陶窑结构体现了哪些经验？"],
+            },
+            {
+                "hall_slug": "prehistoric-workshop",
+                "title": "把观察转成操作问题",
+                "reason": "史前工坊能帮助你用手作流程反推器物制作中的选择和难点。",
+                "focus": "把材料处理、成型、修整和装饰步骤与展品细节对应。",
+                "questions": ["哪一步最影响最终器形？", "手作痕迹可能保留在哪里？"],
+            },
+            {
+                "hall_slug": "site-protection-hall",
+                "title": "回到使用场景",
+                "reason": "遗址现场能把器物放回房屋、灶台、作坊等生活场景，理解它们如何被使用。",
+                "focus": "观察器物可能出现的位置与日常活动之间的关系。",
+                "questions": ["器物在哪里被使用？", "使用场景能改变我们对器物的理解吗？"],
+            },
+        ],
+    },
+}
+_ROUTE_PROFILES["default"] = _ROUTE_PROFILES["B"]
+
+
+def _normalize_persona(interests: list[str] | None) -> str:
+    if not interests:
+        return "B"
+
+    for raw in interests:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        match = re.search(r"(?:persona|personaId)\s*[:=]\s*([A-Da-d]|student|historian|artifact|artisan|default)", text)
+        if match:
+            return _PERSONA_ALIASES.get(match.group(1), match.group(1).upper())
+
+    joined = " ".join(str(item) for item in interests)
+    for alias, code in _PERSONA_ALIASES.items():
+        if alias != "default" and alias in joined:
+            return code
+    return "B"
+
+
+def _step_count_for_time(available_time: int) -> int:
+    if available_time <= 35:
+        return 2
+    if available_time <= 75:
+        return 3
+    if available_time <= 120:
+        return 4
+    return 5
+
+
+def _allocate_minutes(total_minutes: int, count: int) -> list[int]:
+    count = max(1, count)
+    base = max(10, total_minutes // count)
+    minutes = [base for _ in range(count)]
+    remainder = max(0, total_minutes - base * count)
+    for idx in range(remainder):
+        minutes[idx % count] += 1
+    return minutes
+
+
+def _route_plan_text(route: dict[str, Any]) -> str:
+    lines = [route["summary"]]
+    for step in route["steps"]:
+        lines.append(
+            f"{step['order']}. {step['hall_name']}：{step['title']}。{step['focus']}"
+        )
+    return "\n".join(lines)
+
+
+def build_structured_route(
+    available_time: int,
+    interests: list[str] | None = None,
+) -> dict[str, Any]:
+    persona = _normalize_persona(interests)
+    profile = _ROUTE_PROFILES.get(persona, _ROUTE_PROFILES["default"])
+    step_count = min(len(profile["steps"]), _step_count_for_time(available_time))
+    step_count = max(2, min(5, step_count))
+    minutes = _allocate_minutes(max(available_time, 20), step_count)
+
+    steps: list[dict[str, Any]] = []
+    for idx, tpl in enumerate(profile["steps"][:step_count]):
+        hall_slug = normalize_hall(tpl["hall_slug"])
+        if hall_slug not in CANONICAL_HALLS:
+            hall_slug = "basic-exhibition-hall"
+        steps.append(
+            {
+                "order": idx + 1,
+                "hall_slug": hall_slug,
+                "hall_name": hall_display_name(hall_slug),
+                "title": tpl["title"],
+                "reason": tpl["reason"],
+                "focus": tpl["focus"],
+                "estimated_minutes": minutes[idx],
+                "suggested_questions": list(tpl["questions"]),
+            }
+        )
+
+    return {
+        "source": "curator",
+        "total_minutes": available_time,
+        "theme": profile["theme"],
+        "summary": profile["summary"],
+        "steps": steps,
+    }
 
 
 class CuratorService:
@@ -42,6 +284,7 @@ class CuratorService:
 
         # 使用用户兴趣或传入的兴趣
         tour_interests = interests if interests is not None else profile.interests
+        route = build_structured_route(available_time, tour_interests)
 
         # 获取已参观的展品ID
         visited_ids = [eid.value for eid in profile.visited_exhibit_ids]
@@ -55,18 +298,22 @@ class CuratorService:
 
 请使用path_planning工具规划路线。"""
 
-        # 调用策展智能体
-        result = await self._curator_agent.run(
-            user_input=plan_request,
-            chat_history=[],
-        )
+        # 调用策展智能体；结构化 route 已由规则生成，智能体失败也不影响接口可用。
+        try:
+            result = await self._curator_agent.run(
+                user_input=plan_request,
+                chat_history=[],
+            )
+        except Exception:
+            result = {"output": _route_plan_text(route), "session_id": ""}
 
         return {
             "user_id": user_id,
             "available_time": available_time,
             "interests": tour_interests,
             "visited_exhibit_ids": visited_ids,
-            "plan": result.get("output", ""),
+            "plan": result.get("output") or _route_plan_text(route),
+            "route": route,
             "session_id": result.get("session_id", ""),
         }
 
