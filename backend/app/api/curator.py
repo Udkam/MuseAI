@@ -6,7 +6,11 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.api.deps import GuestRateLimitDep, OptionalUser, RateLimitDep, SessionDep
-from app.application.curator_service import CuratorService
+from app.application.curator_service import (
+    CuratorService,
+    build_structured_route,
+    format_route_plan_text,
+)
 from app.application.error_handling import sanitize_error_message
 from app.application.exhibit_service import ExhibitService
 from app.application.profile_service import ProfileService
@@ -143,8 +147,21 @@ async def plan_tour(
     Supports both authenticated users and guests.
     Guests get a temporary profile that won't persist.
     """
-    service = await get_curator_service(session, http_request)
     user_id = get_user_id(current_user)
+    if current_user is None:
+        interests = request.interests or []
+        route = build_structured_route(request.available_time, interests)
+        return PlanTourResponse(
+            user_id=user_id,
+            available_time=request.available_time,
+            interests=interests,
+            visited_exhibit_ids=[],
+            plan=format_route_plan_text(route),
+            route=route,
+            session_id="",
+        )
+
+    service = await get_curator_service(session, http_request)
 
     result = await service.plan_tour(
         user_id=user_id,

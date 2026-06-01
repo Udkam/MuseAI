@@ -204,13 +204,17 @@ def _allocate_minutes(total_minutes: int, count: int) -> list[int]:
     return minutes
 
 
-def _route_plan_text(route: dict[str, Any]) -> str:
+def format_route_plan_text(route: dict[str, Any]) -> str:
     lines = [route["summary"]]
     for step in route["steps"]:
         lines.append(
             f"{step['order']}. {step['hall_name']}：{step['title']}。{step['focus']}"
         )
     return "\n".join(lines)
+
+
+def _route_plan_text(route: dict[str, Any]) -> str:
+    return format_route_plan_text(route)
 
 
 def build_structured_route(

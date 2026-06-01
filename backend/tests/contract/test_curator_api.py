@@ -286,6 +286,7 @@ async def test_plan_tour_allows_guest_without_auth(db_session):
             assert data["visited_exhibit_ids"] == []
             route = _assert_structured_route(data, min_steps=3, max_steps=3)
             assert route["theme"] == "研学记录路线"
+            mock_curator_class.create.assert_not_called()
             mock_agent.run.assert_not_called()
         finally:
             app.dependency_overrides = {}
