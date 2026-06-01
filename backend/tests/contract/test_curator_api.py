@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.api.deps import check_rate_limit
+from app.api.deps import check_guest_rate_limit, check_rate_limit
 from app.api.deps import get_db_session as original_get_db_session
 from app.infra.postgres.database import get_session, get_session_maker
 from app.infra.postgres.models import Base
@@ -172,6 +172,7 @@ async def test_plan_tour_endpoint(db_session, auth_token):
 
     app.dependency_overrides[original_get_db_session] = override_get_db
     app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
 
     # Mock the CuratorAgent to avoid LLM calls
     mock_result = {
@@ -220,6 +221,7 @@ async def test_plan_tour_without_interests(db_session, auth_token):
 
     app.dependency_overrides[original_get_db_session] = override_get_db
     app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
 
     mock_result = {
         "output": "Tour plan based on your profile...",
@@ -254,6 +256,42 @@ async def test_plan_tour_without_interests(db_session, auth_token):
 
 
 @pytest.mark.asyncio
+async def test_plan_tour_allows_guest_without_auth(db_session):
+    """Route planning must work for mini-program guests without a login token."""
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[original_get_db_session] = override_get_db
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
+
+    mock_agent = MagicMock(run=AsyncMock())
+    mock_curator_class = MagicMock()
+    mock_curator_class.create = AsyncMock(return_value=mock_agent)
+
+    with patch("app.api.curator.CuratorAgent", mock_curator_class):
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/curator/plan-tour",
+                    json={
+                        "available_time": 60,
+                        "interests": ["persona:B", "personaId:student"],
+                    },
+                )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["user_id"].startswith("guest-")
+            assert data["visited_exhibit_ids"] == []
+            route = _assert_structured_route(data, min_steps=3, max_steps=3)
+            assert route["theme"] == "研学记录路线"
+            mock_agent.run.assert_not_called()
+        finally:
+            app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_plan_tour_persona_d_returns_artifact_route(db_session, auth_token):
     """Persona D should produce an artifact-oriented structured route."""
     async def override_get_db():
@@ -261,6 +299,7 @@ async def test_plan_tour_persona_d_returns_artifact_route(db_session, auth_token
 
     app.dependency_overrides[original_get_db_session] = override_get_db
     app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
 
     mock_result = {
         "output": "Artifact route plan",
@@ -304,6 +343,7 @@ async def test_plan_tour_available_time_30_returns_two_steps(db_session, auth_to
 
     app.dependency_overrides[original_get_db_session] = override_get_db
     app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
 
     mock_result = {
         "output": "Short route plan",

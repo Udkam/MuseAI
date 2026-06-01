@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
-from app.api.deps import OptionalUser, RateLimitDep, SessionDep
+from app.api.deps import GuestRateLimitDep, OptionalUser, RateLimitDep, SessionDep
 from app.application.curator_service import CuratorService
 from app.application.error_handling import sanitize_error_message
 from app.application.exhibit_service import ExhibitService
@@ -136,7 +136,7 @@ async def plan_tour(
     request: PlanTourRequest,
     current_user: OptionalUser,
     http_request: Request,
-    _: RateLimitDep,
+    _: GuestRateLimitDep,
 ) -> PlanTourResponse:
     """Plan a museum tour based on available time and interests.
 

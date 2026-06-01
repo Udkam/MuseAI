@@ -279,15 +279,19 @@ class CuratorService:
         Returns:
             包含路线规划结果的字典
         """
-        # 获取或创建用户画像
-        profile = await self._profile_service.get_or_create_profile(user_id)
+        is_guest = user_id.startswith("guest-")
+        if is_guest:
+            tour_interests = interests or []
+            visited_ids: list[str] = []
+        else:
+            # 获取或创建用户画像
+            profile = await self._profile_service.get_or_create_profile(user_id)
 
-        # 使用用户兴趣或传入的兴趣
-        tour_interests = interests if interests is not None else profile.interests
+            # 使用用户兴趣或传入的兴趣
+            tour_interests = interests if interests is not None else profile.interests
+            visited_ids = [eid.value for eid in profile.visited_exhibit_ids]
+
         route = build_structured_route(available_time, tour_interests)
-
-        # 获取已参观的展品ID
-        visited_ids = [eid.value for eid in profile.visited_exhibit_ids]
 
         # 构建规划请求
         plan_request = f"""请为我规划一条博物馆参观路线。
@@ -298,14 +302,17 @@ class CuratorService:
 
 请使用path_planning工具规划路线。"""
 
-        # 调用策展智能体；结构化 route 已由规则生成，智能体失败也不影响接口可用。
-        try:
-            result = await self._curator_agent.run(
-                user_input=plan_request,
-                chat_history=[],
-            )
-        except Exception:
+        if is_guest:
             result = {"output": _route_plan_text(route), "session_id": ""}
+        else:
+            # 调用策展智能体；结构化 route 已由规则生成，智能体失败也不影响接口可用。
+            try:
+                result = await self._curator_agent.run(
+                    user_input=plan_request,
+                    chat_history=[],
+                )
+            except Exception:
+                result = {"output": _route_plan_text(route), "session_id": ""}
 
         return {
             "user_id": user_id,
