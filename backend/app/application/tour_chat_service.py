@@ -20,24 +20,28 @@ PERSONA_PROMPTS = {
         "你的叙事风格：先说能直接观察到的遗物、遗迹、展签或空间信息，再说明由此推导出的解释。"
         "避免主观臆测；对不确定内容明确标注'目前只能作为推测'或'学界仍有讨论'。"
         "推荐下一个观察点时，强调证据链、研究问题、工艺承接关系和空间关系。"
+        "这种身份是观察角度，不是固定回答格式；用户问什么，就先回答什么。"
     ),
     "B": (
         "你是一位研学记录员，负责把半坡参观内容整理成学生容易复盘的观察任务和笔记要点。"
-        "你的叙事风格：清晰、具体、有条理，优先给用户'看什么''记什么''为什么重要'。"
+        "你的叙事风格：清晰、具体、有条理，自然提示用户'看什么''记什么''为什么重要'。"
         "回答时适合手机端快速阅读，避免长篇课堂讲稿，也不要把用户当作低龄儿童。"
         "推荐下一个观察点时，说明它适合记录成哪条研学笔记或汇报材料。"
+        "不要每次都套'观察任务/笔记要点/证据1'等固定栏目；只有用户需要整理笔记时才使用这种结构。"
     ),
     "C": (
         "你是一位历史追问者，面向历史爱好者解释半坡遗址和史前社会。"
         "你的叙事风格：把具体文物、遗迹和更大的历史问题联系起来，例如文明起源、共同体、技术、审美和公共生活。"
         "用问题引导用户形成自己的解释，但不要泛泛抒情，也不要把尚无证据的结论说成定论。"
         "推荐下一个观察点时，说明它能帮助用户追问哪个历史问题。"
+        "追问应自然嵌入回答，不要每段都反问，也不要偏离用户问题。"
     ),
     "D": (
         "你是一位器物研究员，专门从材料、器形、纹饰、制作痕迹、使用痕迹和保存状态理解半坡文物。"
         "你的叙事风格：细读器物，优先解释可观察细节、制作工艺、功能线索和比较方法。"
         "不得编造某件器物的具体制作者、故事或象征含义；对纹样含义要区分事实、推测和争议。"
         "推荐下一个观察点时，强调它能帮助用户理解哪类器物细节或研究方法。"
+        "器物视角应融入解释，不要机械分成材料、器形、纹饰等栏目。"
     ),
 }
 
@@ -51,8 +55,8 @@ ASSUMPTION_CONTEXTS = {
 HALL_DESCRIPTIONS = {
     "基本陈列展厅": "基本陈列展厅：以半坡遗址相关考古发现与研究成果为主线，系统展示半坡文化的生活形态、生产方式与社会结构，重点包括人面鱼纹彩陶盆、尖底瓶、彩陶、装饰品和石器工具。",
     "遗址保护大厅": "遗址保护大厅：强调边保护边展示，呈现墓葬、地面圆形房屋、烧制作坊、灶具灶台等原址遗存，帮助用户理解半坡聚落空间和保护展示方式。",
-    "临展厅一": "临展厅一：用于阶段性专题展览，具体主题和展品随馆方当期策展安排变化。回答时应提醒用户以现场展签和馆方信息为准。",
-    "临展厅二": "临展厅二：用于轮换展出和临时专题，具体内容需根据馆方当期展览清单更新。回答时不要编造当期展品。",
+    "临展厅一": "临展厅一：用于阶段性专题展览，具体主题和展品随馆方当期策展安排变化。回答时应提醒用户以现场展签和馆方信息为准；不要编造当期展品，不要把基本陈列展厅的农耕工具、陶器等内容搬来填空。",
+    "临展厅二": "临展厅二：用于轮换展出和临时专题，具体内容需根据馆方当期展览清单更新。回答时不要编造当期展品，不要把基本陈列展厅的农耕工具、陶器等内容搬来填空。",
     "半坡姑娘雕塑": "半坡姑娘雕塑：以半坡姑娘为代表性形象进行艺术化再现，是观众合影点和文化符号，适合从人物形象、公众记忆和半坡文化传播角度解释。",
     "史前工坊": "史前工坊：以互动体验方式转化史前生活知识，适合围绕制陶、材料、手作和动手学习解释半坡工艺。",
     "教研中心": "教研中心：面向青少年和公众教育活动，适合组织研学课程、主题课堂和研究型活动。",
@@ -60,8 +64,8 @@ HALL_DESCRIPTIONS = {
     "陶窑展厅": "陶窑展厅：以陶器如何被制作出来为核心叙事，展示半坡时期制陶与烧制工艺，重点解释制坯、装饰、干燥、入窑烧成和火候控制。",
     "basic-exhibition-hall": "基本陈列展厅：以半坡遗址相关考古发现与研究成果为主线，系统展示半坡文化的生活形态、生产方式与社会结构。",
     "site-protection-hall": "遗址保护大厅：强调边保护边展示，呈现墓葬、地面圆形房屋、烧制作坊、灶具灶台等原址遗存。",
-    "temporary-hall-1": "临展厅一：用于阶段性专题展览，具体主题和展品随馆方当期策展安排变化。",
-    "temporary-hall-2": "临展厅二：用于轮换展出和临时专题，具体内容需根据馆方当期展览清单更新。",
+    "temporary-hall-1": "临展厅一：用于阶段性专题展览，具体主题和展品随馆方当期策展安排变化；不要编造当期展品。",
+    "temporary-hall-2": "临展厅二：用于轮换展出和临时专题，具体内容需根据馆方当期展览清单更新；不要编造当期展品。",
     "banpo-girl-sculpture": "半坡姑娘雕塑：以半坡姑娘为代表性形象进行艺术化再现，是观众合影点和文化符号。",
     "prehistoric-workshop": "史前工坊：以互动体验方式转化史前生活知识，适合围绕制陶、材料、手作和动手学习解释半坡工艺。",
     "education-center": "教研中心：面向青少年和公众教育活动，适合组织研学课程、主题课堂和研究型活动。",
@@ -83,8 +87,32 @@ GLOBAL_DIALOGUE_RULE = (
     严禁使用"各位观众"、"大家请看"、"各位游客"、"同学们"、"朋友们"等面向群体的广播式称呼。
     始终使用"你"、"我们可以看"、"这件展品"等自然的一对一口吻。
     回答简洁，适合手机小屏幕阅读，不要做展厅广播式讲解。
+    当前展厅是回答范围的硬边界；检索上下文若与当前展厅或用户问题冲突，优先遵循当前展厅和用户问题。
+    身份风格只决定观察角度和语气，不是固定模板。不要为了研学、研究或器物风格而强行套栏目、偏离问题。
     如需使用编号列表，请使用连续递增的序号（1. 2. 3.），不得所有项目都用"1."开头。"""
 )
+
+TEMPORARY_HALL_KEYS = {"临展厅一", "临展厅二", "temporary-hall-1", "temporary-hall-2"}
+MAX_RAG_CONTEXT_CHARS = 5000
+
+
+def _join_context(docs: list[Any], max_chars: int = MAX_RAG_CONTEXT_CHARS) -> str:
+    parts: list[str] = []
+    used = 0
+    for doc in docs:
+        text = str(getattr(doc, "page_content", "") or "").strip()
+        if not text:
+            continue
+        remaining = max_chars - used
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            parts.append(text[:remaining])
+            used = max_chars
+            break
+        parts.append(text)
+        used += len(text)
+    return "\n\n".join(parts)
 
 
 def build_system_prompt(
@@ -93,6 +121,7 @@ def build_system_prompt(
     hall: str | None = None,
     exhibit_context: str | None = None,
     visited_exhibits: list[str] | None = None,
+    client_context: str | None = None,
 ) -> str:
     parts = [PERSONA_PROMPTS.get(persona, PERSONA_PROMPTS["A"])]
     parts.append(ASSUMPTION_CONTEXTS.get(assumption, ASSUMPTION_CONTEXTS["A"]))
@@ -100,6 +129,14 @@ def build_system_prompt(
 
     if hall and hall in HALL_DESCRIPTIONS:
         parts.append(f"当前展厅：{HALL_DESCRIPTIONS[hall]}")
+        if hall in TEMPORARY_HALL_KEYS:
+            parts.append(
+                "临展厅回答规则：如果系统没有提供当期展览清单，只能回答看展方法、现场线索和需要向馆方确认的信息；"
+                "不要引用其他展厅的具体农耕工具、陶器或遗址内容来冒充临展内容。"
+            )
+
+    if client_context:
+        parts.append(f"前端导览上下文（只用于约束回答，不作为事实来源）：\n{client_context}")
 
     if exhibit_context:
         parts.append(f"当前展品信息：{exhibit_context}")
@@ -130,6 +167,8 @@ def _build_style_prompt(style: Any) -> str | None:
         if raw:
             mapped = STYLE_LABELS.get(key, {}).get(raw, raw)
             lines.append(f"{label}: {mapped}")
+    if lines:
+        lines.append("这些是语气和详略偏好，不是固定格式；不要为了风格偏离用户问题。")
     return "\n".join(lines) if lines else None
 
 
@@ -142,6 +181,7 @@ async def ask_stream_tour(
     llm_provider: Any,
     exhibit_id: str | None = None,
     exhibit_context: str | None = None,
+    client_context: str | None = None,
     style: Any = None,
     degraded_services: set[str] | None = None,
     tts_provider: BaseTTSProvider | None = None,
@@ -172,6 +212,7 @@ async def ask_stream_tour(
         hall=tour_session.current_hall,
         exhibit_context=exhibit_context,
         visited_exhibits=visited_ids,
+        client_context=client_context,
     )
     style_prompt = _build_style_prompt(style)
     if style_prompt:
@@ -306,20 +347,24 @@ async def _stream_rag(
         or result.get("reranked_documents")
         or result.get("documents", [])
     )
-    context = "\n\n".join(doc.page_content for doc in docs)
+    context = _join_context(docs)
 
     # ── Prompt assembly ────────────────────────────────────────────────────────
     _t = time.perf_counter()
     prompt = None
     if hasattr(rag_agent, "prompt_gateway") and rag_agent.prompt_gateway:
-        prompt = await rag_agent.prompt_gateway.render(
+        rendered_prompt = await rag_agent.prompt_gateway.render(
             "rag_answer_generation",
             {"context": context, "query": message},
         )
+        if rendered_prompt is not None:
+            prompt = f"{system_prompt}\n\n[检索回答任务]\n{rendered_prompt}"
     if prompt is None:
         prompt = (
             f"{system_prompt}\n\n参考上下文：\n{context}\n\n"
-            f"用户问题：{message}\n\n请基于以上信息回答："
+            f"用户问题：{message}\n\n"
+            "请先判断参考上下文是否与当前展厅和用户问题匹配；若不匹配，不要硬套参考上下文。"
+            "请基于以上信息回答："
         )
     _prompt_ms = int((time.perf_counter() - _t) * 1000)
     if perf_log is not None:

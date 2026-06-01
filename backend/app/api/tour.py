@@ -78,6 +78,7 @@ class TourChatRequest(BaseModel):
     message: str = Field(..., max_length=2000)
     exhibit_id: str | None = None
     style: TourChatStyle | None = None
+    client_context: str | None = Field(default=None, max_length=1500)
     tts: bool = False
 
 
@@ -477,6 +478,7 @@ async def tour_chat_stream(
             rag_agent=rag_agent,
             llm_provider=llm_provider,
             exhibit_id=body.exhibit_id,
+            client_context=body.client_context,
             style=body.style,
             degraded_services=degraded,
             tts_provider=tts_provider if body.tts else None,

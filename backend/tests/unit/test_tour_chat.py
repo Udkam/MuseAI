@@ -17,6 +17,7 @@ from app.application.tour_chat_service import (
     ASSUMPTION_CONTEXTS,
     HALL_DESCRIPTIONS,
     PERSONA_PROMPTS,
+    _stream_rag,
     ask_stream_tour,
     build_system_prompt,
 )
@@ -139,7 +140,8 @@ def test_build_system_prompt_with_hall():
 
 def test_build_system_prompt_with_unknown_hall():
     prompt = build_system_prompt(persona="A", assumption="A", hall="unknown-hall")
-    assert "当前展厅" not in prompt
+    assert "unknown-hall" not in prompt
+    assert "当前展厅：unknown-hall" not in prompt
 
 
 def test_build_system_prompt_with_exhibit_context():
@@ -157,6 +159,19 @@ def test_build_system_prompt_with_visited_exhibits():
     assert "exhibit-1" in prompt
     assert "exhibit-2" in prompt
     assert "避免重复介绍" in prompt
+
+
+def test_build_system_prompt_with_client_context():
+    prompt = build_system_prompt(
+        persona="B",
+        assumption="D",
+        hall="临展厅二",
+        client_context="当前身份：研学记录员\n当前展厅：临展厅二",
+    )
+    assert "前端导览上下文" in prompt
+    assert "当前身份：研学记录员" in prompt
+    assert "临展厅回答规则" in prompt
+    assert "不要编造当期展品" in prompt
 
 
 def test_build_system_prompt_all_parts():
@@ -190,6 +205,47 @@ def test_assumption_contexts_have_all_keys():
 def test_hall_descriptions_have_expected_slugs():
     assert "relic-hall" in HALL_DESCRIPTIONS
     assert "site-hall" in HALL_DESCRIPTIONS
+
+
+@pytest.mark.asyncio
+async def test_stream_rag_preserves_system_prompt_with_prompt_gateway():
+    captured_messages = []
+
+    class Doc:
+        page_content = "参考材料：这里是临展厅通用看展方法。"
+
+    class PromptGateway:
+        async def render(self, key, variables):
+            assert key == "rag_answer_generation"
+            return f"数据库模板\n上下文：{variables['context']}\n问题：{variables['query']}"
+
+    rag_agent = MagicMock()
+    rag_agent.run = AsyncMock(return_value={"documents": [Doc()]})
+    rag_agent.prompt_gateway = PromptGateway()
+
+    llm_provider = MagicMock()
+
+    async def fake_stream(messages):
+        captured_messages.extend(messages)
+        yield "ok"
+
+    llm_provider.generate_stream = fake_stream
+
+    events = []
+    async for event, chunk in _stream_rag(
+        rag_agent,
+        llm_provider,
+        "临展厅应该怎么看？",
+        "系统提示：当前展厅是临展厅二，不要编造当期展品。",
+    ):
+        events.append((event, chunk))
+
+    assert events
+    prompt = captured_messages[0]["content"]
+    assert "系统提示：当前展厅是临展厅二" in prompt
+    assert "不要编造当期展品" in prompt
+    assert "数据库模板" in prompt
+    assert "临展厅应该怎么看？" in prompt
 
 
 # ===================================================================
