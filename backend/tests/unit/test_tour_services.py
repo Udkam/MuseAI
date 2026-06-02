@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from app.application.tour_report_service import (
     _generate_one_liner_llm,
+    build_reflection_summary,
     calculate_radar_scores,
     detect_ceramic_question,
     get_report_theme,
@@ -579,6 +580,67 @@ def test_get_report_theme():
     assert get_report_theme("B") == "field_study"
     assert get_report_theme("C") == "history_inquiry"
     assert get_report_theme("D") == "artifact_study"
+
+
+def test_reflection_summary_detects_interest_shift():
+    session = _make_session(persona="D", assumption="D")
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="site-protection-hall",
+            event_meta={"message": "半坡聚落的布局怎样反映社会组织？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="site-protection-hall",
+            event_meta={"message": "壕沟和房屋分布能说明共同体规则吗？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_deep_dive",
+            hall="site-protection-hall",
+            event_meta={"exhibit_name": "地面圆形房屋遗迹"},
+        ).to_entity(),
+    ]
+
+    reflection = build_reflection_summary(session, events)
+
+    assert reflection["status"] == "shifted"
+    assert "器物工艺" in reflection["change_summary"]
+    assert "聚落空间" in reflection["change_summary"] or "社会组织" in reflection["change_summary"]
+
+
+def test_reflection_summary_detects_stable_focus():
+    session = _make_session(persona="D", assumption="D")
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="kiln-hall",
+            event_meta={"message": "陶器烧制工艺有哪些证据？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={"message": "彩陶纹饰和器形能说明什么用途？"},
+        ).to_entity(),
+    ]
+
+    reflection = build_reflection_summary(session, events)
+
+    assert reflection["status"] == "stable"
+    assert "器物工艺" in reflection["observed_focus"]
+
+
+def test_reflection_summary_insufficient_evidence():
+    session = _make_session(persona="C", assumption="C")
+    events = [
+        _make_event_model(event_type="hall_enter", hall="basic-exhibition-hall").to_entity(),
+    ]
+
+    reflection = build_reflection_summary(session, events)
+
+    assert reflection["status"] == "insufficient"
+    assert reflection["confidence"] == 0.35
+    assert "证据不足" in reflection["change_summary"]
 
 
 @pytest.mark.asyncio

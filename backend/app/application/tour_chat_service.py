@@ -52,6 +52,13 @@ ASSUMPTION_CONTEXTS = {
     "D": "游客初始立场：先不下判断，希望跟着证据走。回答时先整理可观察证据，再说明可能解释，鼓励用户逐步形成自己的观点。",
 }
 
+CHALLENGE_PROMPTS = {
+    "A": "是否还有其他证据支持这个结论？有没有哪部分只能算推测？",
+    "B": "如果你要把今天最重要的发现写进研学记录，会记下哪条证据？",
+    "C": "这会改变你对文明发展、共同体或公共生活的理解吗？",
+    "D": "除了工艺和外观，你是否也注意到它的使用场景或社会关系？",
+}
+
 HALL_DESCRIPTIONS = {
     "基本陈列展厅": "基本陈列展厅：以半坡遗址相关考古发现与研究成果为主线，系统展示半坡文化的生活形态、生产方式与社会结构，重点包括人面鱼纹彩陶盆、尖底瓶、彩陶、装饰品和石器工具。",
     "遗址保护大厅": "遗址保护大厅：强调边保护边展示，呈现墓葬、地面圆形房屋、烧制作坊、灶具灶台等原址遗存，帮助用户理解半坡聚落空间和保护展示方式。",
@@ -138,6 +145,10 @@ def build_system_prompt(
     if client_context:
         parts.append(f"前端导览上下文（只用于约束回答，不作为事实来源）：\n{client_context}")
 
+    challenge_prompt = _build_challenge_prompt(persona, assumption, exhibit_context, client_context)
+    if challenge_prompt:
+        parts.append(challenge_prompt)
+
     if exhibit_context:
         parts.append(f"当前展品信息：{exhibit_context}")
 
@@ -145,6 +156,27 @@ def build_system_prompt(
         parts.append(f"游客已参观的展品：{', '.join(visited_exhibits)}（避免重复介绍这些展品）")
 
     return "\n\n".join(parts)
+
+
+def _build_challenge_prompt(
+    persona: str,
+    assumption: str,
+    exhibit_context: str | None,
+    client_context: str | None,
+) -> str | None:
+    context = client_context or ""
+    should_challenge = bool(exhibit_context) or "当前讨论对象" in context or "近期对话" in context
+    if not should_challenge:
+        return None
+
+    challenge = CHALLENGE_PROMPTS.get(persona, CHALLENGE_PROMPTS["A"])
+    assumption_hint = ASSUMPTION_CONTEXTS.get(assumption, ASSUMPTION_CONTEXTS["D"])
+    return (
+        "【反身性挑战提示】不要每轮都使用。仅当用户进入展项深挖、连续追问，"
+        "或回答结尾自然适合时，用一句温和追问把用户的初始判断带回现场证据。"
+        f"可参考初始判断：{assumption_hint} "
+        f"当前身份适合的追问：{challenge}"
+    )
 
 
 STYLE_LABELS = {

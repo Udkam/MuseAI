@@ -16,7 +16,7 @@ from app.api.deps import (
 from app.application.tour_chat_service import ask_stream_tour
 from app.application.tour_event_service import get_events_by_session, record_events
 from app.application.hall_normalizer import normalize_hall, normalize_halls
-from app.application.tour_report_service import generate_report, get_report
+from app.application.tour_report_service import build_reflection_summary, generate_report, get_report
 from app.application.tour_session_service import (
     create_session,
     find_active_session_by_user,
@@ -227,6 +227,24 @@ def _build_report_highlights(report, halls_visited: list[str]) -> list[str]:
 def _format_report(report, tour_session=None, events=None) -> dict:
     eid = report.most_viewed_exhibit_id
     halls_visited = _collect_visited_halls(tour_session, events)
+    report_stats = {
+        "total_duration_minutes": report.total_duration_minutes,
+        "most_viewed_exhibit_duration": report.most_viewed_exhibit_duration,
+        "longest_hall_duration": report.longest_hall_duration,
+        "total_questions": report.total_questions,
+        "total_exhibits_viewed": report.total_exhibits_viewed,
+        "ceramic_questions": report.ceramic_questions,
+    }
+    reflection = (
+        build_reflection_summary(
+            tour_session,
+            events or [],
+            stats=report_stats,
+            radar_scores=report.radar_scores,
+        )
+        if tour_session is not None
+        else None
+    )
     return {
         "id": (
             report.id.value if hasattr(report.id, "value") else report.id
@@ -252,6 +270,7 @@ def _format_report(report, tour_session=None, events=None) -> dict:
         "one_liner": report.one_liner,
         "report_theme": report.report_theme,
         "highlights": _build_report_highlights(report, halls_visited),
+        "reflection": reflection,
         "created_at": report.created_at.isoformat(),
     }
 

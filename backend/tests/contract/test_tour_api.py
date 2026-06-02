@@ -571,6 +571,9 @@ async def test_generate_tour_report(override_dependencies):
     assert "identity_tags" in data
     assert "radar_scores" in data
     assert "one_liner" in data
+    assert "reflection" in data
+    assert data["reflection"]["initial_assumption"]
+    assert data["reflection"]["change_summary"]
     assert data["report_theme"] == "archaeology"
 
 

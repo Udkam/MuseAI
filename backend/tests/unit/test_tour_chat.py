@@ -15,6 +15,7 @@ import pytest
 from app.api.tour import TourChatRequest
 from app.application.tour_chat_service import (
     ASSUMPTION_CONTEXTS,
+    CHALLENGE_PROMPTS,
     HALL_DESCRIPTIONS,
     PERSONA_PROMPTS,
     _stream_rag,
@@ -172,6 +173,39 @@ def test_build_system_prompt_with_client_context():
     assert "当前身份：研学记录员" in prompt
     assert "临展厅回答规则" in prompt
     assert "不要编造当期展品" in prompt
+
+
+def test_build_system_prompt_adds_challenge_only_for_deep_context():
+    plain_prompt = build_system_prompt(persona="D", assumption="D", hall="kiln-hall")
+    assert "反身性挑战提示" not in plain_prompt
+
+    deep_prompt = build_system_prompt(
+        persona="D",
+        assumption="D",
+        hall="kiln-hall",
+        exhibit_context="尖底瓶，汲水陶器",
+    )
+    assert "反身性挑战提示" in deep_prompt
+    assert "除了工艺和外观" in deep_prompt
+    assert "不要每轮都使用" in deep_prompt
+
+
+def test_build_system_prompt_uses_persona_specific_challenge():
+    student_prompt = build_system_prompt(
+        persona="B",
+        assumption="B",
+        exhibit_context="半地穴式房屋",
+    )
+    artifact_prompt = build_system_prompt(
+        persona="D",
+        assumption="D",
+        exhibit_context="尖底瓶",
+    )
+
+    assert CHALLENGE_PROMPTS["B"] in student_prompt
+    assert CHALLENGE_PROMPTS["D"] in artifact_prompt
+    assert CHALLENGE_PROMPTS["D"] not in student_prompt
+    assert CHALLENGE_PROMPTS["B"] not in artifact_prompt
 
 
 def test_build_system_prompt_all_parts():
