@@ -81,6 +81,22 @@ def test_list_exhibits_returns_200_with_pagination(override_db, patch_exhibit_se
     assert body["limit"] == 10
 
 
+def test_list_exhibits_filters_non_exhibit_topic_items(override_db, patch_exhibit_service):
+    patch_exhibit_service.list_exhibits.return_value = [
+        _make_exhibit(name="半坡人"),
+        _make_exhibit(id_="00000000-0000-0000-0000-000000000002", name="尖底瓶"),
+    ]
+    patch_exhibit_service.count_exhibits.return_value = 2
+
+    client = TestClient(app)
+    response = client.get("/api/v1/exhibits?skip=0&limit=10")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["name"] for item in body["exhibits"]] == ["尖底瓶"]
+    assert body["total"] == 1
+
+
 def test_list_exhibits_applies_filter_query_params(override_db, patch_exhibit_service):
     client = TestClient(app)
     response = client.get(
@@ -121,6 +137,14 @@ def test_get_exhibit_detail_returns_200(override_db, patch_exhibit_service):
 
 def test_get_exhibit_detail_returns_404_when_missing(override_db, patch_exhibit_service):
     patch_exhibit_service.get_exhibit.return_value = None
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/exhibits/{VALID_UUID}")
+    assert response.status_code == 404
+
+
+def test_get_exhibit_detail_returns_404_for_non_exhibit_topic(override_db, patch_exhibit_service):
+    patch_exhibit_service.get_exhibit.return_value = _make_exhibit(name="半坡人")
 
     client = TestClient(app)
     response = client.get(f"/api/v1/exhibits/{VALID_UUID}")

@@ -120,6 +120,9 @@ def test_build_system_prompt_persona_b():
     prompt = build_system_prompt(persona="B", assumption="B")
     assert PERSONA_PROMPTS["B"] in prompt
     assert ASSUMPTION_CONTEXTS["B"] in prompt
+    assert '不要用"好的"' in prompt
+    assert "说明了什么" in prompt
+    assert "不要把回答分成重要性、后续观察建议等段落" in prompt
 
 
 def test_build_system_prompt_persona_c():

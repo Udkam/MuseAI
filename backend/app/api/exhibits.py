@@ -12,6 +12,22 @@ from app.infra.postgres.adapters import PostgresExhibitRepository
 
 router = APIRouter(prefix="/exhibits", tags=["exhibits"])
 
+NON_EXHIBIT_NAMES = {
+    "半坡人",
+    "生态环境",
+    "临展厅一当期主题",
+    "临展厅二当期主题",
+}
+
+
+def _is_displayable_exhibit_name(name: str | None) -> bool:
+    value = (name or "").strip()
+    return bool(value) and value not in NON_EXHIBIT_NAMES
+
+
+def _filter_displayable_exhibits(exhibits):
+    return [e for e in exhibits if _is_displayable_exhibit_name(getattr(e, "name", ""))]
+
 
 # ============================================================================
 # Response Models
@@ -142,6 +158,10 @@ async def list_exhibits(
         )
         total = await service.count_exhibits(category=category, hall=hall, floor=floor)
 
+    raw_count = len(exhibits)
+    exhibits = _filter_displayable_exhibits(exhibits)
+    total = max(0, total - (raw_count - len(exhibits)))
+
     return ExhibitListResponse(
         exhibits=[
             ExhibitListItem(
@@ -173,7 +193,7 @@ async def get_exhibit_stats(
     """
     service = get_exhibit_service(session)
 
-    all_exhibits = await service.list_all_active()
+    all_exhibits = _filter_displayable_exhibits(await service.list_all_active())
 
     # Calculate category stats
     category_counts: dict[str, int] = {}
@@ -246,7 +266,7 @@ async def get_exhibit(
 
     exhibit = await service.get_exhibit(exhibit_id)
 
-    if exhibit is None or not exhibit.is_active:
+    if exhibit is None or not exhibit.is_active or not _is_displayable_exhibit_name(exhibit.name):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Exhibit not found: {exhibit_id}",

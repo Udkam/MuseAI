@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     LLM_TOUR_MODEL: str = "deepseek-v4-flash"
     LLM_REPORT_MODEL: str = "deepseek-v4-pro"
     LLM_HEADERS: str = ""  # JSON string of extra headers, e.g. '{"User-Agent": "curl/8.5.0"}'
-    LLM_TEMPERATURE: float = 0.6
+    LLM_TEMPERATURE: float = 0.2
     LLM_MAX_TOKENS: int = 800  # 0 = no limit
     LLM_ENABLE_THINKING: bool = False  # When False, explicitly passes thinking=disabled to the API
 
