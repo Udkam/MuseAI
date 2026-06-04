@@ -278,7 +278,7 @@ async def test_stream_rag_preserves_system_prompt_with_prompt_gateway():
         events.append((event, chunk))
 
     assert events
-    prompt = captured_messages[0]["content"]
+    prompt = "\n".join(m["content"] for m in captured_messages)
     assert "系统提示：当前展厅是临展厅二" in prompt
     assert "不要编造当期展品" in prompt
     assert "数据库模板" in prompt

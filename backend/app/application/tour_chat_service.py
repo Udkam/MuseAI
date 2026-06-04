@@ -103,6 +103,10 @@ GLOBAL_DIALOGUE_RULE = (
 
 TEMPORARY_HALL_KEYS = {"临展厅一", "临展厅二", "temporary-hall-1", "temporary-hall-2"}
 MAX_RAG_CONTEXT_CHARS = 5000
+CONTEXT_REWRITE_KEYWORDS = (
+    "这个", "那个", "这里", "那里", "它", "这件", "这处", "刚才", "刚刚",
+    "上面", "前面", "继续", "我们在讨论", "你刚才", "你说的",
+)
 
 
 def _join_context(docs: list[Any], max_chars: int = MAX_RAG_CONTEXT_CHARS) -> str:
@@ -122,6 +126,15 @@ def _join_context(docs: list[Any], max_chars: int = MAX_RAG_CONTEXT_CHARS) -> st
         parts.append(text)
         used += len(text)
     return "\n\n".join(parts)
+
+
+def _should_use_history_for_retrieval(message: str) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if len(text) <= 12:
+        return True
+    return any(keyword in text for keyword in CONTEXT_REWRITE_KEYWORDS)
 
 
 def build_system_prompt(
@@ -216,6 +229,7 @@ async def ask_stream_tour(
     exhibit_id: str | None = None,
     exhibit_context: str | None = None,
     client_context: str | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
     style: Any = None,
     degraded_services: set[str] | None = None,
     tts_provider: BaseTTSProvider | None = None,
@@ -298,6 +312,8 @@ async def ask_stream_tour(
     try:
         async for event, chunk in _stream_rag(
             rag_agent, llm_provider, message, system_prompt,
+            conversation_history=conversation_history if _should_use_history_for_retrieval(message) else None,
+            answer_history=conversation_history,
             perf_log=log, trace_id=trace_id,
         ):
             if chunk is not None:
@@ -363,13 +379,21 @@ async def _stream_rag(
     llm_provider: Any,
     message: str,
     system_prompt: str,
+    conversation_history: list[dict[str, str]] | None = None,
+    answer_history: list[dict[str, str]] | None = None,
     perf_log: Any = None,
     trace_id: str | None = None,
 ) -> AsyncGenerator[tuple[str, str | None], None]:
     # ── RAG pipeline (rewrite → retrieve → merge → rerank → filter → evaluate) ──
     # skip_generate=True: generate node is a no-op, we stream via llm_provider below.
     _t = time.perf_counter()
-    result = await rag_agent.run(message, system_prompt=system_prompt, trace_id=trace_id, skip_generate=True)
+    result = await rag_agent.run(
+        message,
+        system_prompt=system_prompt,
+        conversation_history=conversation_history,
+        trace_id=trace_id,
+        skip_generate=True,
+    )
     _rag_ms = int((time.perf_counter() - _t) * 1000)
     if perf_log is not None:
         perf_log.bind(stage="rag_pipeline", duration_ms=_rag_ms, ok=True, perf=True).info(
@@ -400,6 +424,8 @@ async def _stream_rag(
             "请先判断参考上下文是否与当前展厅和用户问题匹配；若不匹配，不要硬套参考上下文。"
             "请基于以上信息回答："
         )
+    if prompt.startswith(system_prompt):
+        prompt = prompt[len(system_prompt):].lstrip()
     _prompt_ms = int((time.perf_counter() - _t) * 1000)
     if perf_log is not None:
         perf_log.bind(stage="prompt_build", duration_ms=_prompt_ms, ok=True, perf=True).info(
@@ -407,7 +433,13 @@ async def _stream_rag(
         )
 
     # ── LLM streaming (2nd LLM call — see ai_latency_diagnostics.md §4) ───────
-    messages = [{"role": "user", "content": prompt}]
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for item in (answer_history or conversation_history or [])[-6:]:
+        role = item.get("role")
+        content = str(item.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content[:800]})
+    messages.append({"role": "user", "content": prompt})
     if perf_log is not None:
         perf_log.bind(stage="llm_stream_start", perf=True).info("[perf] llm_stream_start")
     _t = time.perf_counter()

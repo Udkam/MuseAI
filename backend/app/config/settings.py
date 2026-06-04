@@ -47,24 +47,34 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
 
-    LLM_PROVIDER: str = "openai_compatible"
-    LLM_BASE_URL: str = "https://api.deepseek.com/v1"
+    LLM_PROVIDER: str = "qwen"
+    LLM_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     LLM_API_KEY: str = ""  # Changed: No default
-    LLM_MODEL: str = "deepseek-v4-flash"
-    LLM_TOUR_MODEL: str = "deepseek-v4-flash"
-    LLM_REPORT_MODEL: str = "deepseek-v4-pro"
+    LLM_MODEL: str = "qwen-flash"
+    LLM_TOUR_MODEL: str = "qwen-flash"
+    LLM_REPORT_MODEL: str = "qwen-plus"
     LLM_HEADERS: str = ""  # JSON string of extra headers, e.g. '{"User-Agent": "curl/8.5.0"}'
     LLM_TEMPERATURE: float = 0.2
     LLM_MAX_TOKENS: int = 800  # 0 = no limit
-    LLM_ENABLE_THINKING: bool = False  # When False, explicitly passes thinking=disabled to the API
+    LLM_ENABLE_THINKING: bool = False  # When False, disables provider-specific thinking mode where supported
+    LLM_COMPAT_MODE: str = "qwen"  # auto, openai, deepseek, qwen
 
     @field_validator("LLM_PROVIDER")
     @classmethod
     def validate_llm_provider(cls, v: str) -> str:
         v = v.strip().lower()
-        allowed = {"openai_compatible", "openai", "deepseek"}
+        allowed = {"openai_compatible", "openai", "deepseek", "qwen"}
         if v not in allowed:
             raise ValueError(f"LLM_PROVIDER must be one of {allowed}, got {v!r}")
+        return v
+
+    @field_validator("LLM_COMPAT_MODE")
+    @classmethod
+    def validate_llm_compat_mode(cls, v: str) -> str:
+        v = v.strip().lower()
+        allowed = {"auto", "openai", "deepseek", "qwen"}
+        if v not in allowed:
+            raise ValueError(f"LLM_COMPAT_MODE must be one of {allowed}, got {v!r}")
         return v
 
     @field_validator("LLM_HEADERS")

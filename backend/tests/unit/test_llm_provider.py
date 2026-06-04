@@ -154,6 +154,8 @@ class TestOpenAICompatibleProvider:
         mock_settings.LLM_TEMPERATURE = 0.6
         mock_settings.LLM_MAX_TOKENS = 800
         mock_settings.LLM_ENABLE_THINKING = False
+        mock_settings.LLM_COMPAT_MODE = "auto"
+        mock_settings.LLM_PROVIDER = "openai_compatible"
 
         with patch("app.infra.providers.llm.AsyncOpenAI") as mock_client_class:
             provider = OpenAICompatibleProvider.from_settings(mock_settings)
@@ -161,6 +163,7 @@ class TestOpenAICompatibleProvider:
             assert provider.model == "deepseek-v4-flash"
             assert provider.tour_model == "deepseek-v4-flash"
             assert provider.report_model == "deepseek-v4-pro"
+            assert provider.compat_mode == "deepseek"
             mock_client_class.assert_called_once_with(
                 base_url="https://api.example.com/v1",
                 api_key="test-api-key",
@@ -221,6 +224,59 @@ class TestOpenAICompatibleProvider:
 
         assert chunks == ["chunk"]
         assert mock_client.chat.completions.create.call_args.kwargs["model"] == "deepseek-v4-flash"
+
+    @pytest.mark.asyncio
+    async def test_qwen_compat_mode_uses_enable_thinking_extra_body(self):
+        mock_client = AsyncMock()
+
+        async def mock_stream():
+            yield MagicMock(choices=[MagicMock(delta=MagicMock(content="qwen"))])
+
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
+
+        with patch("app.infra.providers.llm.AsyncOpenAI", return_value=mock_client):
+            provider = OpenAICompatibleProvider(
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_key="test-key",
+                model="qwen-flash",
+                max_retries=1,
+                compat_mode="qwen",
+                enable_thinking=False,
+            )
+            chunks = []
+            async for chunk in provider.generate_stream([{"role": "user", "content": "Hi"}]):
+                chunks.append(chunk)
+
+        assert chunks == ["qwen"]
+        assert mock_client.chat.completions.create.call_args.kwargs["extra_body"] == {
+            "enable_thinking": False
+        }
+
+    @pytest.mark.asyncio
+    async def test_deepseek_compat_mode_uses_thinking_extra_body(self):
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "deepseek"
+        mock_response.model = "deepseek-v4-flash"
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch("app.infra.providers.llm.AsyncOpenAI", return_value=mock_client):
+            provider = OpenAICompatibleProvider(
+                base_url="https://api.deepseek.com/v1",
+                api_key="test-key",
+                model="deepseek-v4-flash",
+                max_retries=1,
+                compat_mode="deepseek",
+                enable_thinking=False,
+            )
+            await provider.generate([{"role": "user", "content": "Hi"}])
+
+        assert mock_client.chat.completions.create.call_args.kwargs["extra_body"] == {
+            "thinking": {"type": "disabled"}
+        }
 
     @pytest.mark.asyncio
     async def test_generate_retries_on_error(self):

@@ -1,5 +1,6 @@
 docs/reference/**
 .env
+.env.backup.*
 
 # Python
 __pycache__/

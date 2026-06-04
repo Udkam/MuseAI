@@ -75,11 +75,17 @@ class TourChatStyle(BaseModel):
     terminology: str | None = None
 
 
+class TourChatHistoryItem(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., max_length=1000)
+
+
 class TourChatRequest(BaseModel):
     message: str = Field(..., max_length=2000)
     exhibit_id: str | None = None
     style: TourChatStyle | None = None
     client_context: str | None = Field(default=None, max_length=1500)
+    conversation_history: list[TourChatHistoryItem] | None = Field(default=None, max_length=8)
     tts: bool = False
 
 
@@ -539,6 +545,9 @@ async def tour_chat_stream(
             llm_provider=llm_provider,
             exhibit_id=body.exhibit_id,
             client_context=body.client_context,
+            conversation_history=[
+                item.model_dump() for item in body.conversation_history
+            ] if body.conversation_history else None,
             style=body.style,
             degraded_services=degraded,
             tts_provider=tts_provider if body.tts else None,

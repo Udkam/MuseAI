@@ -14,6 +14,37 @@ from pydantic import BaseModel
 from app.config.settings import Settings
 from app.domain.exceptions import LLMError
 
+LLM_COMPAT_MODES = {"auto", "openai", "deepseek", "qwen"}
+
+
+def detect_compat_mode(
+    base_url: str,
+    model: str,
+    provider: str | None = None,
+    explicit: str | None = None,
+) -> str:
+    requested = (explicit or "auto").strip().lower()
+    if requested in LLM_COMPAT_MODES and requested != "auto":
+        return requested
+
+    haystack = " ".join([base_url or "", model or "", provider or ""]).lower()
+    if "dashscope" in haystack or "aliyuncs" in haystack or "qwen" in haystack:
+        return "qwen"
+    if "deepseek" in haystack:
+        return "deepseek"
+    return "openai"
+
+
+def build_extra_body_for_compat(compat_mode: str, enable_thinking: bool) -> dict[str, Any]:
+    if enable_thinking:
+        return {}
+    mode = compat_mode.strip().lower()
+    if mode == "qwen":
+        return {"enable_thinking": False}
+    if mode == "deepseek":
+        return {"thinking": {"type": "disabled"}}
+    return {}
+
 
 class LLMResponse(BaseModel):
     content: str
@@ -47,9 +78,13 @@ class OpenAICompatibleProvider:
         temperature: float = 0.5,
         max_tokens: int = 2048,
         enable_thinking: bool = False,
+        compat_mode: str = "auto",
+        provider_name: str = "openai_compatible",
     ):
         self.base_url = base_url
         self.model = model
+        self.provider_name = provider_name
+        self.compat_mode = detect_compat_mode(base_url, model, provider_name, compat_mode)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.temperature = temperature
@@ -83,6 +118,8 @@ class OpenAICompatibleProvider:
             temperature=settings.LLM_TEMPERATURE,
             max_tokens=settings.LLM_MAX_TOKENS,
             enable_thinking=settings.LLM_ENABLE_THINKING,
+            compat_mode=getattr(settings, "LLM_COMPAT_MODE", "auto"),
+            provider_name=getattr(settings, "LLM_PROVIDER", "openai_compatible"),
         )._with_purpose_models(
             tour_model=getattr(settings, "LLM_TOUR_MODEL", None) or settings.LLM_MODEL,
             report_model=getattr(settings, "LLM_REPORT_MODEL", None) or settings.LLM_MODEL,
@@ -139,9 +176,7 @@ class OpenAICompatibleProvider:
         started_at = datetime.now(UTC)
         request_model = model or self.model
 
-        extra_body: dict[str, Any] = {}
-        if not self.enable_thinking:
-            extra_body["thinking"] = {"type": "disabled"}
+        extra_body = build_extra_body_for_compat(self.compat_mode, self.enable_thinking)
 
         for attempt in range(self.max_retries):
             try:
@@ -166,7 +201,7 @@ class OpenAICompatibleProvider:
                 if self.trace_recorder is not None:
                     await self.trace_recorder.record_call_once(
                         call_id=call_id,
-                        provider="openai-compatible",
+                        provider=f"openai-compatible:{self.compat_mode}",
                         model=request_model,
                         status="success",
                         source="openai-compatible",
@@ -222,9 +257,7 @@ class OpenAICompatibleProvider:
         started_at = datetime.now(UTC)
         chunks: list[str] = []
         request_model = model or self.model
-        extra_body: dict[str, Any] = {}
-        if not self.enable_thinking:
-            extra_body["thinking"] = {"type": "disabled"}
+        extra_body = build_extra_body_for_compat(self.compat_mode, self.enable_thinking)
         try:
             stream = await self.client.chat.completions.create(  # type: ignore[arg-type]
                 model=request_model,
@@ -245,7 +278,7 @@ class OpenAICompatibleProvider:
             if self.trace_recorder is not None:
                 await self.trace_recorder.record_call_once(
                     call_id=call_id,
-                    provider="openai-compatible",
+                    provider=f"openai-compatible:{self.compat_mode}",
                     model=request_model,
                     status="success",
                     source="openai-compatible",

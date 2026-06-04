@@ -29,6 +29,7 @@ from app.infra.langchain.embeddings import (
     OpenAICompatibleEmbeddings,
 )
 from app.infra.langchain.retrievers import RRFRetriever, UnifiedRetriever
+from app.infra.providers.llm import build_extra_body_for_compat, detect_compat_mode
 from app.infra.providers.rerank import create_rerank_provider as _create_rerank_provider_impl
 
 
@@ -72,12 +73,28 @@ def create_llm(settings: Settings, callbacks: list | None = None) -> ChatOpenAI:
             default_headers = json.loads(settings.LLM_HEADERS)
         except json.JSONDecodeError:
             logger.warning("LLM_HEADERS is not valid JSON, ignoring: {}", settings.LLM_HEADERS)
+    model_name = getattr(settings, "LLM_TOUR_MODEL", None) or settings.LLM_MODEL
+    compat_mode = detect_compat_mode(
+        settings.LLM_BASE_URL,
+        model_name,
+        getattr(settings, "LLM_PROVIDER", "openai_compatible"),
+        getattr(settings, "LLM_COMPAT_MODE", "auto"),
+    )
+    extra_body = build_extra_body_for_compat(compat_mode, settings.LLM_ENABLE_THINKING)
+    kwargs: dict[str, Any] = {
+        "base_url": settings.LLM_BASE_URL,
+        "api_key": settings.LLM_API_KEY,
+        "model": model_name,
+        "default_headers": default_headers,
+        "temperature": settings.LLM_TEMPERATURE,
+        "callbacks": callbacks,
+    }
+    if settings.LLM_MAX_TOKENS > 0:
+        kwargs["max_tokens"] = settings.LLM_MAX_TOKENS
+    if extra_body:
+        kwargs["model_kwargs"] = {"extra_body": extra_body}
     return ChatOpenAI(
-        base_url=settings.LLM_BASE_URL,
-        api_key=settings.LLM_API_KEY,
-        model=getattr(settings, "LLM_TOUR_MODEL", None) or settings.LLM_MODEL,
-        default_headers=default_headers,
-        callbacks=callbacks,
+        **kwargs,
     )
 
 
