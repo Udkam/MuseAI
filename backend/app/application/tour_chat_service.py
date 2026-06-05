@@ -275,6 +275,14 @@ async def ask_stream_tour(
         exhibit_id=exhibit_id,
     )
     is_ceramic = detect_ceramic_question(message)
+    log.info(
+        "[tour_chat] stream request persona={} hall={} exhibit={} message_chars={} history_items={}",
+        tour_session.persona,
+        tour_session.current_hall,
+        exhibit_id or "",
+        len(message or ""),
+        len(conversation_history or []),
+    )
 
     # Emit buffered perf marks
     log.bind(stage="session_loaded", duration_ms=_session_ms, ok=True, perf=True).info(
@@ -406,6 +414,8 @@ async def _stream_rag(
         or result.get("reranked_documents")
         or result.get("documents", [])
     )
+    if perf_log is not None:
+        perf_log.info("[tour_chat] rag result docs={}", len(docs))
     context = _join_context(docs)
 
     # ── Prompt assembly ────────────────────────────────────────────────────────

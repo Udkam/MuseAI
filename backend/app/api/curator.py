@@ -3,6 +3,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
+from loguru import logger
 from pydantic import BaseModel
 
 from app.api.deps import GuestRateLimitDep, OptionalUser, RateLimitDep, SessionDep
@@ -148,9 +149,25 @@ async def plan_tour(
     Guests get a temporary profile that won't persist.
     """
     user_id = get_user_id(current_user)
+    interests = request.interests or []
+    persona_hint = next(
+        (item for item in interests if str(item).startswith(("persona:", "personaId:"))),
+        "",
+    )
+    logger.info(
+        "[curator] plan request guest={} available_time={} interests={} persona_hint={}",
+        current_user is None,
+        request.available_time,
+        len(interests),
+        persona_hint,
+    )
     if current_user is None:
-        interests = request.interests or []
         route = build_structured_route(request.available_time, interests)
+        logger.info(
+            "[curator] plan response source=guest_rule route_steps={} theme={}",
+            len(route.get("steps", [])),
+            route.get("theme", ""),
+        )
         return PlanTourResponse(
             user_id=user_id,
             available_time=request.available_time,
@@ -167,6 +184,11 @@ async def plan_tour(
         user_id=user_id,
         available_time=request.available_time,
         interests=request.interests,
+    )
+    logger.info(
+        "[curator] plan response source=curator route_steps={} plan_chars={}",
+        len((result.get("route") or {}).get("steps", [])),
+        len(result.get("plan") or ""),
     )
 
     return PlanTourResponse(**result)
