@@ -209,13 +209,25 @@ def _format_session(tour_session) -> dict:
 
 def _collect_visited_halls(tour_session=None, events=None) -> list[str]:
     candidates: list[str] = []
+    fallback_candidates: list[str] = []
     if tour_session is not None:
         candidates.extend(tour_session.visited_halls or [])
     for event in events or []:
-        if getattr(event, "event_type", None) in {"hall_enter", "hall_leave"} and getattr(event, "hall", None):
-            candidates.append(event.hall)
-    if not candidates and tour_session is not None and tour_session.current_hall:
+        event_type = getattr(event, "event_type", None)
+        hall = getattr(event, "hall", None)
+        metadata = getattr(event, "metadata", None) or {}
+        target = candidates if event_type in {"hall_enter", "hall_leave"} else fallback_candidates
+        if hall:
+            target.append(hall)
+        for key in ("hall", "hall_slug", "hallSlug"):
+            if metadata.get(key):
+                target.append(metadata[key])
+    if candidates:
+        return normalize_halls(candidates)
+    if tour_session is not None and tour_session.current_hall:
         candidates.append(tour_session.current_hall)
+    if not candidates:
+        candidates.extend(fallback_candidates)
     return normalize_halls(candidates)
 
 

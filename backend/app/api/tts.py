@@ -33,6 +33,11 @@ async def synthesize_tts(body: SynthesizeRequest, request: Request):
 
     if body.persona:
         config = await tts_service.get_tour_tts_config(body.persona)
+        if body.voice:
+            config.voice = body.voice
+        if body.style:
+            base_style = config.style or ""
+            config.style = (base_style + "\n" + body.style).strip()
     else:
         config = TTSConfig(voice=body.voice or "冰糖", style=body.style)
     try:

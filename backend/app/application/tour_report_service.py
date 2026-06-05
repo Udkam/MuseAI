@@ -215,7 +215,7 @@ def build_reflection_summary(
         return {
             "initial_assumption": f"{initial_focus_text}；{assumption_text}",
             "observed_focus": "目前只记录到少量提问或深入查看，更多是展厅到访线索。",
-            "change_summary": "证据不足，暂时不能判断你的关注点是否发生了明显变化。建议再围绕一个展厅或展项提出至少两个问题。",
+            "change_summary": "当前证据还少，关注点变化暂不明显。",
             "confidence": 0.35,
             "status": "insufficient",
             "initial_focus": REFLECTION_TOPIC_LABELS.get(initial_topic, initial_topic),

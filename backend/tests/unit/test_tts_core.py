@@ -265,13 +265,15 @@ class TestTTSService:
         service = self._make_service()
         config = service.get_qa_tts_config()
         assert config.voice == "冰糖"
-        assert config.style == "用清晰专业的语气讲解，语速适中"
+        assert "语速稍快" in config.style
+        assert "句间停顿短一些" in config.style
 
     def test_get_qa_tts_config_user_voice(self):
         service = self._make_service()
         config = service.get_qa_tts_config(user_voice="苏打")
         assert config.voice == "苏打"
-        assert config.style == "用清晰专业的语气讲解，语速适中"
+        assert "语速稍快" in config.style
+        assert "句间停顿短一些" in config.style
 
     @pytest.mark.asyncio
     async def test_get_tour_tts_config_with_persona_voice(self):
@@ -304,7 +306,8 @@ class TestTTSService:
 
         config = await service.get_tour_tts_config("B")
         assert config.voice == "冰糖"
-        assert config.style == "用温和亲切的语气讲解，语速适中"
+        assert "语速稍快" in config.style
+        assert "句间停顿短一些" in config.style
 
     @pytest.mark.asyncio
     async def test_get_tour_tts_config_all_personas(self):
