@@ -43,7 +43,7 @@ class TTSService:
         settings = get_settings()
         return TTSConfig(
             voice=user_voice or settings.TTS_DEFAULT_VOICE,
-            style="用自然明亮、清晰亲切的语气讲解，语速稍快但咬字清楚，句间停顿短一些，不拖长尾音",
+            style="用自然、清晰、亲切的博物馆导览语气朗读；语速稍快，比常规讲解更利落，句间停顿短一些，尾音不要拖长。",
         )
 
     async def get_tour_tts_config(self, persona: str) -> TTSConfig:
@@ -60,5 +60,5 @@ class TTSService:
         logger.debug(f"TTS config: persona={persona}, prompt_key={prompt_key}, voice={voice}, final_voice={final_voice}")
         return TTSConfig(
             voice=final_voice,
-            style=style or "用自然明亮、温和亲切的语气讲解，语速稍快但咬字清楚，句间停顿短一些，不拖长尾音",
+            style=style or "用自然、清晰、亲切的博物馆导览语气朗读；语速稍快，比常规讲解更利落，句间停顿短一些，尾音不要拖长。",
         )

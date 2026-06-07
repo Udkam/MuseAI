@@ -57,7 +57,7 @@ class TourSessionUpdate(BaseModel):
 class TourEventItem(BaseModel):
     event_type: Literal[
         "exhibit_view", "exhibit_question", "exhibit_deep_dive",
-        "hall_enter", "hall_leave",
+        "hall_enter", "hall_leave", "assistant_answer",
     ]
     exhibit_id: str | None = None
     hall: str | None = None
