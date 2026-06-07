@@ -8,9 +8,6 @@ from app.application.prompt_service import PromptService
 from app.application.tts_service import (
     VOICE_DESCRIPTION_KEY,
     VOICE_KEY,
-    extract_voice,
-    extract_voice_description,
-    store_voice_description,
 )
 from app.config.settings import get_settings
 from app.infra.cache.prompt_cache import PromptCache
@@ -23,18 +20,18 @@ TTS_PROMPTS = [
         "name": "Tour TTS - Archaeology Researcher",
         "category": "tts",
         "content": (
-            "【角色】五十多岁的考古研究员，声音沉稳浑厚，带有学术气息。"
-            "常年在田野考古，说话清晰有力，重视证据与推理边界，偶尔带出专业术语但从不卖弄。\n"
+            "【角色】考古研究员，以年轻女性声线进行清晰、亲切、带有证据感的讲解。"
+            "重视证据与推理边界，偶尔带出专业术语但从不卖弄。\n"
             "【场景】在博物馆展厅中，面对感兴趣的参观者，分享自己多年的考古发现与文物背后的故事。\n"
             "【指导】\n"
             "- 语速：自然清晰，略快于常规讲解，重要细节只短暂停顿\n"
-            "- 气息：平稳深沉，句间停顿短，不拖长尾音\n"
+            "- 气息：明亮稳定，句间停顿短，不拖长尾音\n"
             "- 咬字：清晰准确，对文物名称和历史年代会略微加重\n"
             "- 情绪：对考古发现怀有真挚的热爱与敬畏，讲到精彩处声音会微微上扬"
         ),
         "variables": [
-            {"name": VOICE_KEY, "description": "白桦"},
-            {"name": VOICE_DESCRIPTION_KEY, "description": "五十多岁的中年男性，声音沉稳浑厚，带有学术气息"},
+            {"name": VOICE_KEY, "description": "冰糖"},
+            {"name": VOICE_DESCRIPTION_KEY, "description": "年轻女性声线，明亮清澈，亲切自然，适合清晰、有证据感的博物馆讲解"},
         ],
     },
     {
@@ -42,7 +39,7 @@ TTS_PROMPTS = [
         "name": "Tour TTS - Study Tour Recorder",
         "category": "tts",
         "content": (
-            "【角色】二十多岁的研学记录员，声音清晰亲切，适合研学引导。"
+            "【角色】研学记录员，以年轻女性声线进行明亮、清楚、适合边看边记的讲解。"
             "擅长把展厅内容整理成观察任务、笔记要点和可复盘的小结。\n"
             "【场景】在博物馆展厅中，陪研学学生和参观者边看边记，形成自己的证据链。\n"
             "【指导】\n"
@@ -52,8 +49,8 @@ TTS_PROMPTS = [
             "- 情绪：亲切专注，帮助用户把展品整理成清楚的研学记录"
         ),
         "variables": [
-            {"name": VOICE_KEY, "description": "苏打"},
-            {"name": VOICE_DESCRIPTION_KEY, "description": "二十多岁的青年声音，清晰亲切，适合研学引导"},
+            {"name": VOICE_KEY, "description": "冰糖"},
+            {"name": VOICE_DESCRIPTION_KEY, "description": "年轻女性声线，明亮清澈，亲切自然，适合研学引导"},
         ],
     },
     {
@@ -61,7 +58,7 @@ TTS_PROMPTS = [
         "name": "Tour TTS - History Inquirer",
         "category": "tts",
         "content": (
-            "【角色】三十多岁的历史追问者，声音清晰理性，富有引导感。"
+            "【角色】历史追问者，以年轻女性声线进行清晰、理性、有引导感的讲解。"
             "擅长把半坡文物和遗址放进文明起源、共同体和公共生活等大问题中追问。\n"
             "【场景】在博物馆展厅中，陪历史爱好者比较证据，形成自己的解释。\n"
             "【指导】\n"
@@ -71,8 +68,8 @@ TTS_PROMPTS = [
             "- 情绪：理性而有好奇心，用问题引导但不过度反问"
         ),
         "variables": [
-            {"name": VOICE_KEY, "description": "茉莉"},
-            {"name": VOICE_DESCRIPTION_KEY, "description": "三十多岁的年轻女性，声音清晰理性，富有引导感"},
+            {"name": VOICE_KEY, "description": "冰糖"},
+            {"name": VOICE_DESCRIPTION_KEY, "description": "年轻女性声线，明亮清澈，理性自然，富有引导感"},
         ],
     },
     {
@@ -80,18 +77,18 @@ TTS_PROMPTS = [
         "name": "Tour TTS - Artifact Researcher",
         "category": "tts",
         "content": (
-            "【角色】四十多岁的器物研究员，声音稳实耐心，带有研究者的专注感。"
+            "【角色】器物研究员，以年轻女性声线进行清晰、耐心、关注细节的讲解。"
             "熟悉材料、器形、纹饰、制作痕迹、使用痕迹和保存状态，讲解时重视器物细读。\n"
             "【场景】在文物、陶窑和工坊相关展区中，陪参观者从细节理解半坡文物。\n"
             "【指导】\n"
             "- 语速：自然清晰，略快于常规讲解，工艺步骤之间短暂停顿\n"
-            "- 气息：平稳扎实，强调关键工序时不拖长尾音\n"
+            "- 气息：明亮稳定，强调关键工序时不拖长尾音\n"
             "- 咬字：朴实清楚，工艺术语要说得容易懂\n"
             "- 情绪：专注、耐心，对手艺和纹样细节保持温和的兴致"
         ),
         "variables": [
-            {"name": VOICE_KEY, "description": "苏打"},
-            {"name": VOICE_DESCRIPTION_KEY, "description": "四十多岁的中年男性，声音稳实耐心，带有手艺人的专注感"},
+            {"name": VOICE_KEY, "description": "冰糖"},
+            {"name": VOICE_DESCRIPTION_KEY, "description": "年轻女性声线，明亮清澈，耐心自然，适合器物细读"},
         ],
     },
 ]
@@ -109,33 +106,16 @@ async def main():
         for prompt in TTS_PROMPTS:
             existing = await service.get_prompt(prompt["key"])
             if existing:
-                new_vars = list(existing.variables)
-                changed = False
-
-                # Backfill voice_description if missing
-                if extract_voice_description(existing.variables) is None:
-                    voice_desc = extract_voice_description(prompt["variables"])
-                    if voice_desc:
-                        new_vars = store_voice_description(new_vars, voice_desc)
-                        changed = True
-                        print(f"  [backfill] {prompt['key']} voice_description")
-
-                # Backfill voice if missing
-                if extract_voice(existing.variables) is None:
-                    voice = extract_voice(prompt["variables"])
-                    if voice:
-                        new_vars.append({"name": VOICE_KEY, "description": voice})
-                        changed = True
-                        print(f"  [backfill] {prompt['key']} voice={voice}")
-
-                if changed:
+                if existing.content != prompt["content"] or existing.variables != prompt["variables"]:
                     await repo.update_with_variables(
                         key=prompt["key"],
-                        content=existing.content,
-                        variables=new_vars,
+                        content=prompt["content"],
+                        variables=prompt["variables"],
                         changed_by="seed_script",
-                        change_reason="Backfill missing TTS metadata",
+                        change_reason="Sync TTS persona voice and style defaults",
                     )
+                    await cache.invalidate(prompt["key"])
+                    print(f"  [updated] {prompt['key']} voice=冰糖")
                 else:
                     print(f"  [skip] {prompt['key']} already exists")
                 continue

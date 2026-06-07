@@ -1,6 +1,9 @@
+import base64
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from app.application.tts_service import DEFAULT_TTS_VOICE
 from app.infra.providers.tts.base import TTSConfig
 
 router = APIRouter(prefix="/tts", tags=["tts"])
@@ -8,14 +11,14 @@ router = APIRouter(prefix="/tts", tags=["tts"])
 
 class SynthesizeRequest(BaseModel):
     text: str
-    voice: str | None = "冰糖"
+    voice: str | None = DEFAULT_TTS_VOICE
     style: str | None = None
     persona: str | None = None
 
 
 class SynthesizeResponse(BaseModel):
-    audio: str  # base64-encoded PCM16
-    format: str = "pcm16"
+    audio: str  # base64-encoded WAV audio
+    format: str = "wav"
 
 
 def _get_tts_service(request: Request):
@@ -33,23 +36,18 @@ async def synthesize_tts(body: SynthesizeRequest, request: Request):
 
     if body.persona:
         config = await tts_service.get_tour_tts_config(body.persona)
-        if body.voice:
-            config.voice = body.voice
         if body.style:
             base_style = config.style or ""
             config.style = (base_style + "\n" + body.style).strip()
     else:
-        config = TTSConfig(voice=body.voice or "冰糖", style=body.style)
+        config = TTSConfig(voice=DEFAULT_TTS_VOICE, style=body.style)
     try:
-        # Use synthesize_stream to get PCM16 chunks, collect all into one buffer
-        chunks = []
-        async for chunk in tts_service.provider.synthesize_stream(body.text, config):
-            chunks.append(chunk)
-        audio_b64 = "".join(chunks)
+        audio_bytes = await tts_service.provider.synthesize(body.text, config)
+        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
     except Exception:
         raise HTTPException(status_code=502, detail="TTS synthesis failed") from None
 
     return SynthesizeResponse(
         audio=audio_b64,
-        format="pcm16",
+        format="wav",
     )

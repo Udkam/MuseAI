@@ -10,10 +10,10 @@ from app.application.tts_service import (
 class TestExtractVoiceDescription:
     def test_found(self):
         variables = [
-            {"name": VOICE_DESCRIPTION_KEY, "description": "五十多岁的中年男性"},
+            {"name": VOICE_DESCRIPTION_KEY, "description": "冰糖美少女声线"},
             {"name": "other", "description": "something"},
         ]
-        assert extract_voice_description(variables) == "五十多岁的中年男性"
+        assert extract_voice_description(variables) == "冰糖美少女声线"
 
     def test_not_found(self):
         variables = [{"name": "other", "description": "something"}]

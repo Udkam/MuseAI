@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.api.deps import CurrentAdminUser, PromptCacheDep, SessionDep
 from app.application.tts_service import (
+    DEFAULT_TTS_VOICE,
     VOICE_KEY,
     extract_voice,
     extract_voice_description,
@@ -156,10 +157,8 @@ async def update_tts_persona(
         existing.variables, request.voice_description or ""
     )
 
-    if request.voice is not None:
-        new_variables = [v for v in new_variables if v.get("name") != VOICE_KEY]
-        if request.voice:
-            new_variables.append({"name": VOICE_KEY, "description": request.voice})
+    new_variables = [v for v in new_variables if v.get("name") != VOICE_KEY]
+    new_variables.append({"name": VOICE_KEY, "description": DEFAULT_TTS_VOICE})
 
     try:
         prompt = await repository.update_with_variables(

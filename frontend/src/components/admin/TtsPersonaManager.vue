@@ -25,14 +25,7 @@ const currentPersona = ref(null)
 const versions = ref([])
 const versionsLoading = ref(false)
 const presetVoices = [
-  { value: '冰糖', label: '冰糖 (中文女声)' },
-  { value: '茉莉', label: '茉莉 (中文女声)' },
-  { value: '苏打', label: '苏打 (中文男声)' },
-  { value: '白桦', label: '白桦 (中文男声)' },
-  { value: 'Mia', label: 'Mia (英文女声)' },
-  { value: 'Chloe', label: 'Chloe (英文女声)' },
-  { value: 'Milo', label: 'Milo (英文男声)' },
-  { value: 'Dean', label: 'Dean (英文男声)' },
+  { value: '冰糖', label: '冰糖（美少女声线）' },
 ]
 
 const editForm = ref({
@@ -325,7 +318,7 @@ onMounted(fetchPersonas)
 
           <div class="editor-section">
             <h4>音色描述</h4>
-            <p class="field-hint">描述角色的嗓音特征，用于音色设计预览（如：五十多岁的中年男性，声音沉稳浑厚）</p>
+            <p class="field-hint">当前仅保留冰糖美少女声线；可描述语速、停顿和讲解气质。</p>
             <el-input
               v-model="editForm.voice_description"
               type="textarea"
@@ -367,7 +360,7 @@ onMounted(fetchPersonas)
               v-model="previewForm.voice_description"
               type="textarea"
               :rows="3"
-              placeholder="例如：五十多岁的中年男性，北方口音，语速缓慢沉稳"
+              placeholder="例如：冰糖美少女声线，清甜明亮，语速自然偏快，停顿短"
             />
           </div>
 

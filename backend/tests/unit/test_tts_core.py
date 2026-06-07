@@ -8,7 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
-from app.application.tts_service import TTSService
+from app.application.tts_service import DEFAULT_TTS_STYLE, DEFAULT_TTS_VOICE, TTSService
 from app.config.settings import Settings
 from app.domain.entities import Prompt
 from app.domain.value_objects import PromptId
@@ -80,9 +80,9 @@ class TestTTSConfig:
         assert config.style is None
 
     def test_voice_with_style(self):
-        config = TTSConfig(voice="茉莉", style="用温柔的语气")
-        assert config.voice == "茉莉"
-        assert config.style == "用温柔的语气"
+        config = TTSConfig(voice=DEFAULT_TTS_VOICE, style="用明亮自然的语气")
+        assert config.voice == DEFAULT_TTS_VOICE
+        assert config.style == "用明亮自然的语气"
 
 
 class TestBaseTTSProvider:
@@ -146,7 +146,7 @@ class TestXiaomiTTSProvider:
     @pytest.mark.asyncio
     async def test_synthesize_stream_no_style(self):
         provider = self._make_provider()
-        config = TTSConfig(voice="苏打")
+        config = TTSConfig(voice=DEFAULT_TTS_VOICE)
 
         mock_chunk = MagicMock()
         mock_chunk.choices = [MagicMock()]
@@ -265,38 +265,36 @@ class TestTTSService:
         service = self._make_service()
         config = service.get_qa_tts_config()
         assert config.voice == "冰糖"
-        assert "语速稍快" in config.style
-        assert "句间停顿短一些" in config.style
+        assert config.style == DEFAULT_TTS_STYLE
 
     def test_get_qa_tts_config_user_voice(self):
         service = self._make_service()
-        config = service.get_qa_tts_config(user_voice="苏打")
-        assert config.voice == "苏打"
-        assert "语速稍快" in config.style
-        assert "句间停顿短一些" in config.style
+        config = service.get_qa_tts_config(user_voice=DEFAULT_TTS_VOICE)
+        assert config.voice == DEFAULT_TTS_VOICE
+        assert config.style == DEFAULT_TTS_STYLE
 
     @pytest.mark.asyncio
-    async def test_get_tour_tts_config_with_persona_voice(self):
+    async def test_get_tour_tts_config_uses_default_voice_over_persona_voice(self):
         gateway = AsyncMock()
-        prompt = _make_prompt("tour_tts_persona_a", "用沉稳专业的语气讲解", voice="白桦")
-        gateway.get_entity = AsyncMock(return_value=prompt)
-        service = self._make_service(prompt_gateway=gateway)
-
-        config = await service.get_tour_tts_config("A")
-        assert config.voice == "白桦"
-        assert config.style == "用沉稳专业的语气讲解"
-        gateway.get_entity.assert_called_once_with("tour_tts_persona_a")
-
-    @pytest.mark.asyncio
-    async def test_get_tour_tts_config_fallback_to_default_voice(self):
-        gateway = AsyncMock()
-        prompt = _make_prompt("tour_tts_persona_a", "用沉稳专业的语气讲解")
+        prompt = _make_prompt("tour_tts_persona_a", "用明亮自然的语气讲解", voice=DEFAULT_TTS_VOICE)
         gateway.get_entity = AsyncMock(return_value=prompt)
         service = self._make_service(prompt_gateway=gateway)
 
         config = await service.get_tour_tts_config("A")
         assert config.voice == "冰糖"
-        assert config.style == "用沉稳专业的语气讲解"
+        assert config.style == DEFAULT_TTS_STYLE
+        gateway.get_entity.assert_called_once_with("tour_tts_persona_a")
+
+    @pytest.mark.asyncio
+    async def test_get_tour_tts_config_fallback_to_default_voice(self):
+        gateway = AsyncMock()
+        prompt = _make_prompt("tour_tts_persona_a", "用明亮自然的语气讲解")
+        gateway.get_entity = AsyncMock(return_value=prompt)
+        service = self._make_service(prompt_gateway=gateway)
+
+        config = await service.get_tour_tts_config("A")
+        assert config.voice == "冰糖"
+        assert config.style == DEFAULT_TTS_STYLE
 
     @pytest.mark.asyncio
     async def test_get_tour_tts_config_fallback_when_no_prompt(self):
@@ -306,12 +304,11 @@ class TestTTSService:
 
         config = await service.get_tour_tts_config("B")
         assert config.voice == "冰糖"
-        assert "语速稍快" in config.style
-        assert "句间停顿短一些" in config.style
+        assert config.style == DEFAULT_TTS_STYLE
 
     @pytest.mark.asyncio
     async def test_get_tour_tts_config_all_personas(self):
-        for persona, voice in [("A", "白桦"), ("B", "苏打"), ("C", "茉莉"), ("D", "苏打")]:
+        for persona, voice in [("A", DEFAULT_TTS_VOICE), ("B", DEFAULT_TTS_VOICE), ("C", DEFAULT_TTS_VOICE), ("D", DEFAULT_TTS_VOICE)]:
             gateway = AsyncMock()
             prompt = _make_prompt(
                 f"tour_tts_persona_{persona.lower()}",
@@ -322,8 +319,8 @@ class TestTTSService:
             service = self._make_service(prompt_gateway=gateway)
 
             config = await service.get_tour_tts_config(persona)
-            assert config.voice == voice
-            assert config.style == f"Style for {persona}"
+            assert config.voice == "冰糖"
+            assert config.style == DEFAULT_TTS_STYLE
 
 
 # ---------------------------------------------------------------------------
@@ -394,9 +391,7 @@ class TestTTSSettings:
 def mock_tts_service():
     service = AsyncMock()
     service.provider = AsyncMock()
-    service.provider.synthesize_stream = MagicMock(
-        return_value=_async_iter(["AAAA", "BBBB"])
-    )
+    service.provider.synthesize = AsyncMock(return_value=b"RIFF_WAV_DATA")
     return service
 
 
@@ -407,13 +402,15 @@ async def test_synthesize_endpoint(mock_tts_service):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/tts/synthesize",
-                json={"text": "你好", "voice": "冰糖"},
+                json={"text": "你好", "voice": DEFAULT_TTS_VOICE},
             )
     assert resp.status_code == 200
     data = resp.json()
     assert "audio" in data
-    assert data["format"] == "pcm16"
-    assert data["audio"] == "AAAABBBB"
+    assert data["format"] == "wav"
+    assert base64.b64decode(data["audio"]) == b"RIFF_WAV_DATA"
+    args, _ = mock_tts_service.provider.synthesize.call_args
+    assert args[1].voice == DEFAULT_TTS_VOICE
 
 
 @pytest.mark.asyncio

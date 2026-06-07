@@ -31,7 +31,7 @@ async def _async_iter(items):
         yield item
 
 
-def _make_prompt(key="tour_tts_persona_a", voice_desc="五十多岁男性"):
+def _make_prompt(key="tour_tts_persona_a", voice_desc="冰糖美少女声线"):
     variables = []
     if voice_desc:
         variables.append({"name": "__voice_description__", "description": voice_desc})
@@ -290,18 +290,18 @@ class TestCachedTTSProvider:
         assert key1 != key2
 
     @pytest.mark.asyncio
-    async def test_different_voice_uses_different_key(self):
+    async def test_same_voice_same_text_can_share_key(self):
         redis = _mock_redis(get_return=None)
         inner = FakeProvider(chunks=["AA"])
         cached = CachedTTSProvider(inner, redis=redis)
 
         await _collect(cached.synthesize_stream("你好", TTSConfig(voice="冰糖")))
-        await _collect(cached.synthesize_stream("你好", TTSConfig(voice="小溪")))
+        await _collect(cached.synthesize_stream("你好", TTSConfig(voice="冰糖")))
 
         assert inner.call_count == 2
         key1 = redis.get.call_args_list[0][0][0]
         key2 = redis.get.call_args_list[1][0][0]
-        assert key1 != key2
+        assert key1 == key2
 
     @pytest.mark.asyncio
     async def test_different_style_uses_different_key(self):
@@ -404,7 +404,7 @@ class TestListTtsPersonas:
         assert response.status_code == 200
         data = response.json()
         assert data["total"] == 2
-        assert data["personas"][0]["voice_description"] == "五十多岁男性"
+        assert data["personas"][0]["voice_description"] == "冰糖美少女声线"
 
 
 class TestGetTtsPersona:
