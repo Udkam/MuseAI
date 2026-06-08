@@ -61,6 +61,7 @@ htmlcov/
 
 # Logs
 logs/
+backend_uvicorn.log
 
 # Performance test reports (keep directory structure but ignore generated reports)
 performance_reports/*.html
