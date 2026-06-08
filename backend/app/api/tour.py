@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -36,6 +37,14 @@ router = APIRouter(prefix="/tour", tags=["tour"])
 
 TourPersonaCode = Literal["A", "B", "C", "D"]
 TourAssumptionCode = Literal["A", "B", "C", "D"]
+VISITED_HALL_EVENT_TYPES = {
+    "hall_enter",
+    "hall_leave",
+    "exhibit_question",
+    "assistant_answer",
+    "exhibit_view",
+    "exhibit_deep_dive",
+}
 
 
 class TourSessionCreate(BaseModel):
@@ -209,25 +218,23 @@ def _format_session(tour_session) -> dict:
 
 def _collect_visited_halls(tour_session=None, events=None) -> list[str]:
     candidates: list[str] = []
-    fallback_candidates: list[str] = []
     if tour_session is not None:
         candidates.extend(tour_session.visited_halls or [])
     for event in events or []:
         event_type = getattr(event, "event_type", None)
+        if event_type not in VISITED_HALL_EVENT_TYPES:
+            continue
         hall = getattr(event, "hall", None)
         metadata = getattr(event, "metadata", None) or {}
-        target = candidates if event_type in {"hall_enter", "hall_leave"} else fallback_candidates
         if hall:
-            target.append(hall)
+            candidates.append(hall)
         for key in ("hall", "hall_slug", "hallSlug"):
             if metadata.get(key):
-                target.append(metadata[key])
+                candidates.append(metadata[key])
     if candidates:
         return normalize_halls(candidates)
     if tour_session is not None and tour_session.current_hall:
         candidates.append(tour_session.current_hall)
-    if not candidates:
-        candidates.extend(fallback_candidates)
     return normalize_halls(candidates)
 
 
@@ -240,6 +247,63 @@ def _build_report_highlights(report, halls_visited: list[str]) -> list[str]:
     if report.total_exhibits_viewed:
         highlights.append(f"重点查看 {report.total_exhibits_viewed} 件展品")
     return highlights
+
+
+def _compact_record_text(value: str | None, max_len: int = 90) -> str:
+    text = str(value or "")
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = re.sub(r"[*_`#>-]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > max_len:
+        return text[:max_len].rstrip() + "…"
+    return text
+
+
+def _record_point_from_answer(answer: str | None) -> str:
+    text = _compact_record_text(answer, 300)
+    if not text:
+        return "这条问题已经留下线索，后续可回到对应展厅核对可见证据。"
+    sentences = [
+        item.strip()
+        for item in re.split(r"[。！？；]", text)
+        if item.strip()
+    ]
+    markers = ("说明", "反映", "表明", "意味着", "可以看出", "证据", "关键")
+    for sentence in sentences:
+        if any(marker in sentence for marker in markers):
+            return _compact_record_text(sentence, 110)
+    return _compact_record_text(sentences[0] if sentences else text, 110)
+
+
+def _build_report_record_notes(events=None) -> list[dict[str, str]]:
+    notes: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for event in events or []:
+        event_type = getattr(event, "event_type", None)
+        if event_type not in {"assistant_answer", "exhibit_question"}:
+            continue
+        metadata = getattr(event, "metadata", None) or {}
+        question = (
+            metadata.get("question")
+            or metadata.get("message")
+            or metadata.get("query")
+            or ""
+        )
+        if not question:
+            continue
+        compact_question = _compact_record_text(question, 54)
+        if not compact_question or compact_question in seen:
+            continue
+        seen.add(compact_question)
+        notes.append(
+            {
+                "question": f"围绕：{compact_question}",
+                "point": _record_point_from_answer(metadata.get("answer")),
+            }
+        )
+        if len(notes) >= 4:
+            break
+    return notes
 
 
 def _format_report(report, tour_session=None, events=None) -> dict:
@@ -288,6 +352,7 @@ def _format_report(report, tour_session=None, events=None) -> dict:
         "one_liner": report.one_liner,
         "report_theme": report.report_theme,
         "highlights": _build_report_highlights(report, halls_visited),
+        "record_notes": _build_report_record_notes(events),
         "reflection": reflection,
         "created_at": report.created_at.isoformat(),
     }

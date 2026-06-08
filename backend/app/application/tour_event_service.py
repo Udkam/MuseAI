@@ -31,7 +31,7 @@ async def record_events(
             exhibit_id=event_data.get("exhibit_id"),
             hall=event_data.get("hall"),
             duration_seconds=event_data.get("duration_seconds"),
-            metadata=event_data.get("metadata"),
+            event_meta=event_data.get("metadata"),
             created_at=now,
         )
         session.add(model)

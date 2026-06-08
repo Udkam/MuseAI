@@ -578,7 +578,7 @@ async def test_generate_tour_report(override_dependencies):
 
 
 @pytest.mark.asyncio
-async def test_generate_tour_report_counts_only_real_hall_visits(override_dependencies):
+async def test_generate_tour_report_counts_halls_with_question_activity(override_dependencies):
     mock_llm = AsyncMock()
     mock_llm.generate = AsyncMock(return_value="半坡记录完成")
 
@@ -627,8 +627,9 @@ async def test_generate_tour_report_counts_only_real_hall_visits(override_depend
 
     assert report_resp.status_code == 200
     data = report_resp.json()
-    assert data["halls_visited"] == ["basic-exhibition-hall"]
-    assert "prehistoric-workshop" not in data["halls_visited"]
+    assert data["halls_visited"] == ["basic-exhibition-hall", "prehistoric-workshop"]
+    assert data["record_notes"]
+    assert "这里适合怎么做研学记录" in data["record_notes"][0]["question"]
 
 
 @pytest.mark.asyncio
