@@ -345,7 +345,7 @@ describe('useTour', () => {
     })
     await createTourSession('A', 'B', 'A')
 
-    expect(personaLabel.value).toBe('半坡原住民')
+    expect(personaLabel.value).toBe('研学记录员')
   })
 
   it('reportThemeTitle computes correct title', async () => {
@@ -358,6 +358,6 @@ describe('useTour', () => {
     })
     await createTourSession('A', 'C', 'A')
 
-    expect(reportThemeTitle.value).toBe('半坡游学荣誉证书')
+    expect(reportThemeTitle.value).toBe('半坡历史追问报告')
   })
 })

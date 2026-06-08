@@ -70,7 +70,7 @@ export function useTour() {
     sessionToken.value = result.data.session_token
     _persistSession()
     const updateResult = await api.tour.updateSession(result.data.id, { status: 'opening', interest_type: interestType, persona, assumption }, sessionToken.value)
-    if (updateResult.ok) {
+    if (updateResult?.ok) {
       tourSession.value = updateResult.data
     }
     return tourSession.value
@@ -308,12 +308,22 @@ export function useTour() {
   }
 
   const personaLabel = computed(() => {
-    const map = { A: '考古队长', B: '半坡原住民', C: '历史老师' }
+    const map = {
+      A: '考古研究员',
+      B: '研学记录员',
+      C: '历史追问者',
+      D: '器物研究员',
+    }
     return map[tourSession.value?.persona] || ''
   })
 
   const reportThemeTitle = computed(() => {
-    const map = { A: '你的半坡考古报告', B: '半坡一日穿越体验', C: '半坡游学荣誉证书' }
+    const map = {
+      A: '半坡考古研究报告',
+      B: '半坡研学记录报告',
+      C: '半坡历史追问报告',
+      D: '半坡器物观察报告',
+    }
     return map[tourSession.value?.persona] || ''
   })
 

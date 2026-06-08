@@ -26,11 +26,14 @@ const editForm = ref({
 // Category labels
 const categoryLabels = {
   rag: 'RAG',
-  curator: '策展人',
+  curator: 'AI 策展路线',
   narrative: '叙事生成',
   query_transform: '查询转换',
-  reflection: '反思提示',
-  narrative_style: '叙事风格'
+  reflection: '认知变化',
+  narrative_style: '叙事风格',
+  report: '游览报告',
+  tour: '导览对话',
+  tts: '语音人设'
 }
 
 // Computed

@@ -132,6 +132,18 @@ async function handleSubmit() {
 
 <template>
   <div class="tour-path-manager">
+    <el-alert
+      title="小程序当前优先调用 AI 策展路线"
+      type="info"
+      :closable="false"
+      show-icon
+      class="route-alert"
+    >
+      <template #default>
+        route 页会优先调用 /curator/plan-tour 生成结构化路线；这里维护的是人工路线和兜底参考，不会覆盖小程序的 AI 策展结果。
+      </template>
+    </el-alert>
+
     <div class="toolbar">
       <el-button type="primary" @click="handleAdd">
         <el-icon><PlusIcon /></el-icon>
@@ -209,5 +221,9 @@ async function handleSubmit() {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.route-alert {
+  margin-bottom: 16px;
 }
 </style>

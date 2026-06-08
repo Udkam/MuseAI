@@ -11,9 +11,10 @@ import {
 } from '@element-plus/icons-vue'
 
 const personaLabels = {
-  a: { name: '考古学家', color: 'warning' },
-  b: { name: '老村民', color: 'success' },
-  c: { name: '历史老师', color: 'primary' },
+  a: { name: '考古研究员', color: 'warning' },
+  b: { name: '研学记录员', color: 'success' },
+  c: { name: '历史追问者', color: 'primary' },
+  d: { name: '器物研究员', color: 'info' },
 }
 
 const loading = ref(false)
@@ -36,7 +37,7 @@ const editForm = ref({
 })
 const previewForm = ref({
   voice_description: '',
-  sample_text: '大家好，欢迎来到博物馆，我是今天的讲解员'
+  sample_text: '这里是半坡遗址。先看眼前这件器物，再判断它能说明什么。'
 })
 const previewLoading = ref(false)
 const previewAudioUrl = ref('')
@@ -101,7 +102,7 @@ function openPreviewDialog(persona) {
   currentPersona.value = persona
   previewForm.value = {
     voice_description: persona.voice_description || '',
-    sample_text: '大家好，欢迎来到博物馆，我是今天的讲解员'
+    sample_text: '这里是半坡遗址。先看眼前这件器物，再判断它能说明什么。'
   }
   previewAudioUrl.value = ''
   previewDialogVisible.value = true

@@ -1,10 +1,11 @@
 <script setup>
-import { Collection, Document, MapLocation, OfficeBuilding, Cpu, Microphone } from '@element-plus/icons-vue'
+import { Collection, Document, MapLocation, OfficeBuilding, Cpu, Microphone, Monitor } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
 
 const adminItems = [
+  { path: '/admin/overview', label: '小程序闭环', icon: Monitor },
   { path: '/admin/documents', label: '知识库管理', icon: Document },
   { path: '/admin/halls', label: '展厅设置', icon: OfficeBuilding },
   { path: '/admin/exhibits', label: '展品管理', icon: Collection },

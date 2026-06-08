@@ -12,7 +12,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from app.config.settings import Settings
+from app.config.settings import PROJECT_ROOT, Settings
 
 
 def _get_log_file(log_dir: Path, module: str) -> Path:
@@ -72,8 +72,11 @@ def setup_logging(settings: Settings) -> None:
     # Remove default handler
     logger.remove()
 
-    # Create log directory
+    # Create log directory. Relative LOG_DIR values are resolved from the
+    # project root so logs do not drift when uvicorn is started elsewhere.
     log_dir = Path(settings.LOG_DIR)
+    if not log_dir.is_absolute():
+        log_dir = PROJECT_ROOT / log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine format based on settings

@@ -47,7 +47,13 @@ const routes = [
       {
         path: '',
         name: 'admin-home',
-        redirect: '/admin/exhibits'
+        redirect: '/admin/overview'
+      },
+      {
+        path: 'overview',
+        name: 'admin-overview',
+        component: () => import('../components/admin/MiniProgramControlPanel.vue'),
+        meta: { title: '小程序闭环控制台' }
       },
       {
         path: 'documents',
