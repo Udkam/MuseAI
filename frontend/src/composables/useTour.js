@@ -1,8 +1,9 @@
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { api } from '../api/index.js'
+import { BANPO_PERSONA_BY_CODE, mergeHallsWithContract } from '../constants/banpo.js'
 import { useAuth } from './useAuth.js'
-import { useTTSPlayer } from './useTTSPlayer.js'
 import { useTourWorkbench } from './useTourWorkbench.js'
+import { useTTSPlayer } from './useTTSPlayer.js'
 
 const tourSession = ref(null)
 const sessionToken = ref(null)
@@ -69,7 +70,12 @@ export function useTour() {
     tourSession.value = result.data
     sessionToken.value = result.data.session_token
     _persistSession()
-    const updateResult = await api.tour.updateSession(result.data.id, { status: 'opening', interest_type: interestType, persona, assumption }, sessionToken.value)
+
+    const updateResult = await api.tour.updateSession(
+      result.data.id,
+      { status: 'opening', interest_type: interestType, persona, assumption },
+      sessionToken.value,
+    )
     if (updateResult?.ok) {
       tourSession.value = updateResult.data
     }
@@ -119,7 +125,7 @@ export function useTour() {
   async function fetchHalls() {
     const result = await api.tour.getHalls()
     if (result.ok) {
-      halls.value = result.data.halls || []
+      halls.value = mergeHallsWithContract(result.data.halls || [])
     }
     return halls.value
   }
@@ -127,10 +133,14 @@ export function useTour() {
   async function selectHall(hallSlug) {
     currentHall.value = hallSlug
     const token = _getToken()
-    await api.tour.updateSession(tourSession.value.id, {
-      current_hall: hallSlug,
-      status: 'touring',
-    }, token)
+    await api.tour.updateSession(
+      tourSession.value.id,
+      {
+        current_hall: hallSlug,
+        status: 'touring',
+      },
+      token,
+    )
     _persistSession()
 
     const exhibitsResult = await api.exhibits.list({ hall: hallSlug })
@@ -154,9 +164,13 @@ export function useTour() {
     suggestedActions.value = null
 
     const token = _getToken()
-    await api.tour.updateSession(tourSession.value.id, {
-      current_exhibit_id: exhibit.id,
-    }, token)
+    await api.tour.updateSession(
+      tourSession.value.id,
+      {
+        current_exhibit_id: exhibit.id,
+      },
+      token,
+    )
   }
 
   async function sendTourMessage(message, skipUserPush = false, style = null) {
@@ -190,15 +204,11 @@ export function useTour() {
             suggestedActions.value.is_ceramic_question = event.is_ceramic_question || false
           }
         } else if (event.event === 'error') {
-          error.value = event.data?.message || 'AI导览暂时不可用'
-        } else if (event.event === 'audio_start') {
-          // New audio segment — gapless scheduling in useTTSPlayer handles concatenation
+          error.value = event.data?.message || 'AI 导览暂时不可用'
         } else if (event.event === 'audio_chunk') {
           if (ttsPreferences.value.enabled && ttsPreferences.value.autoPlay) {
             feedChunk(event.data)
           }
-        } else if (event.event === 'audio_end') {
-          // playback finishes naturally
         } else if (event.event === 'audio_error') {
           console.warn('TTS error:', event.data?.message)
         }
@@ -293,12 +303,12 @@ export function useTour() {
       clearInterval(eventFlushTimer)
       eventFlushTimer = null
     }
+    stopTTS()
   }
 
   function setupBeforeUnload() {
     window.addEventListener('beforeunload', () => {
       if (eventBuffer.length > 0 && tourSession.value) {
-        const token = _getToken()
         navigator.sendBeacon(
           `/api/v1/tour/sessions/${tourSession.value.id}/events`,
           JSON.stringify({ events: eventBuffer }),
@@ -307,25 +317,8 @@ export function useTour() {
     })
   }
 
-  const personaLabel = computed(() => {
-    const map = {
-      A: '考古研究员',
-      B: '研学记录员',
-      C: '历史追问者',
-      D: '器物研究员',
-    }
-    return map[tourSession.value?.persona] || ''
-  })
-
-  const reportThemeTitle = computed(() => {
-    const map = {
-      A: '半坡考古研究报告',
-      B: '半坡研学记录报告',
-      C: '半坡历史追问报告',
-      D: '半坡器物观察报告',
-    }
-    return map[tourSession.value?.persona] || ''
-  })
+  const personaLabel = computed(() => BANPO_PERSONA_BY_CODE[tourSession.value?.persona]?.name || '')
+  const reportThemeTitle = computed(() => BANPO_PERSONA_BY_CODE[tourSession.value?.persona]?.reportTitle || '')
 
   return {
     tourSession,

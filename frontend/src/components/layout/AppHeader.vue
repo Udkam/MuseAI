@@ -1,12 +1,21 @@
 <script setup>
 import { computed, inject, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAuth } from '../../composables/useAuth.js'
+import {
+  ChatDotRound,
+  Collection,
+  Compass,
+  MapLocation,
+  Menu,
+  Setting,
+  SwitchButton,
+  User,
+} from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
-import { User, SwitchButton, ChatDotRound, MapLocation, Collection, Setting, Compass, Menu } from '@element-plus/icons-vue'
+import { useAuth } from '../../composables/useAuth.js'
 import { FishFaceSymbol } from '../../design-system/motifs/index.js'
 
-const props = defineProps({
+defineProps({
   showSidebarToggle: {
     type: Boolean,
     default: false,
@@ -21,14 +30,16 @@ const { user, isAuthenticated, isAdmin, logout } = useAuth()
 
 const navItems = [
   { path: '/', title: '智能问答', icon: ChatDotRound, requiresAuth: false },
-  { path: '/tour', title: 'AI导览', icon: Compass, requiresAuth: false },
+  { path: '/tour', title: 'AI 导览', icon: Compass, requiresAuth: false },
   { path: '/curator', title: '导览助手', icon: MapLocation, requiresAuth: true },
   { path: '/exhibits', title: '展品浏览', icon: Collection, requiresAuth: true },
   { path: '/admin', title: '管理后台', icon: Setting, requiresAuth: true, requiresAdmin: true },
 ]
 
-const activeMenu = computed(() => route.path)
-
+const activeMenu = computed(() => {
+  if (route.path.startsWith('/admin')) return '/admin'
+  return route.path
+})
 const healthStatus = ref('checking')
 
 async function checkHealth() {
@@ -128,15 +139,21 @@ onMounted(checkHealth)
 <style scoped>
 .app-header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
+  min-height: 64px;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid rgba(77, 51, 31, 0.08);
+  background: rgba(255, 252, 247, 0.96);
+  backdrop-filter: blur(12px);
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .nav-menu {
@@ -145,13 +162,25 @@ onMounted(checkHealth)
   background: transparent;
 }
 
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .logo-mark {
+  flex: 0 0 auto;
   color: var(--color-accent);
 }
 
 .logo-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--font-family-base);
   font-weight: var(--font-weight-semibold);
+  letter-spacing: 0;
 }
 
 .nav-menu .el-menu-item {
@@ -183,16 +212,25 @@ onMounted(checkHealth)
   color: var(--color-text-primary);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 900px) {
   .app-header {
+    grid-template-columns: auto 1fr;
     gap: var(--space-2);
+    padding: 0 var(--space-3);
   }
 
   .nav-menu {
     display: none;
   }
 
+  .header-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 767px) {
   .logo-title {
+    max-width: 160px;
     font-size: var(--font-size-body);
   }
 

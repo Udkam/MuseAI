@@ -1,508 +1,348 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { api } from '../../api/index.js'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import {
-  Edit,
-  Clock,
-  RefreshRight,
-  VideoPlay,
-  Headset
-} from '@element-plus/icons-vue'
-
-const personaLabels = {
-  a: { name: '考古研究员', color: 'warning' },
-  b: { name: '研学记录员', color: 'success' },
-  c: { name: '历史追问者', color: 'primary' },
-  d: { name: '器物研究员', color: 'info' },
-}
+import { Headset, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { api } from '../../api/index.js'
+import { BANPO_PERSONAS, TTS_VOICE_CONTRACT } from '../../constants/banpo.js'
 
 const loading = ref(false)
-const personas = ref([])
-const drawerVisible = ref(false)
-const versionDialogVisible = ref(false)
-const previewDialogVisible = ref(false)
-const currentPersona = ref(null)
-const versions = ref([])
-const versionsLoading = ref(false)
-const presetVoices = [
-  { value: '冰糖', label: '冰糖（美少女声线）' },
-]
-
-const editForm = ref({
-  content: '',
-  voice: '',
-  voice_description: '',
-  change_reason: ''
-})
-const previewForm = ref({
-  voice_description: '',
-  sample_text: '这里是半坡遗址。先看眼前这件器物，再判断它能说明什么。'
-})
+const syncing = ref(false)
 const previewLoading = ref(false)
+const backendPersonas = ref([])
 const previewAudioUrl = ref('')
+
+const rows = computed(() => BANPO_PERSONAS.map((persona) => {
+  const backend = findBackendPersona(persona.code)
+  return {
+    ...persona,
+    backend,
+    backendVoice: backend?.voice || '',
+    backendDescription: backend?.voice_description || '',
+    synced: backend?.voice === TTS_VOICE_CONTRACT.voice,
+  }
+}))
+
+onMounted(fetchPersonas)
 
 async function fetchPersonas() {
   loading.value = true
   try {
     const result = await api.admin.ttsPersonas.list()
     if (result.ok) {
-      personas.value = result.data.personas || []
+      backendPersonas.value = result.data.personas || []
     } else {
-      ElMessage.error(result.data?.detail || '获取语音角色列表失败')
+      backendPersonas.value = []
+      ElMessage.error(result.data?.detail || '获取语音角色失败')
     }
   } finally {
     loading.value = false
   }
 }
 
-function getPersonaLetter(key) {
-  return key.replace('tour_tts_persona_', '')
+function findBackendPersona(code) {
+  const lower = code.toLowerCase()
+  return backendPersonas.value.find((item) => {
+    const key = String(item.key || '').toLowerCase()
+    const persona = String(item.persona || '').toLowerCase()
+    return key.endsWith(`_${lower}`) || persona === lower || item.code === code
+  })
 }
 
-function openEditDrawer(persona) {
-  currentPersona.value = persona
-  editForm.value = {
-    content: persona.content,
-    voice: persona.voice || '',
-    voice_description: persona.voice_description || '',
-    change_reason: ''
-  }
-  drawerVisible.value = true
+function buildPersonaPrompt(persona) {
+  return [
+    `【导览身份】${persona.name}`,
+    `【回答角度】${persona.prompt}`,
+    '【播报声线】统一使用冰糖声线。声音应清亮、自然、偏年轻女性；语速稍快但吐字清楚，避免中年男声、拖沓停顿和过度戏剧化。',
+    '【播报方式】像现场导览员一样直接说明重点，不读出 Markdown 标记，不读出内部处理说明。',
+  ].join('\n')
 }
 
-async function handleUpdate() {
-  if (!editForm.value.content.trim()) {
-    ElMessage.warning('风格提示词不能为空')
-    return
+function buildUpdatePayload(persona) {
+  return {
+    content: buildPersonaPrompt(persona),
+    voice: TTS_VOICE_CONTRACT.voice,
+    voice_description: TTS_VOICE_CONTRACT.description,
+    change_reason: '同步小程序 TTS 契约：只保留冰糖美少女声线',
   }
+}
 
-  loading.value = true
+async function syncPersona(persona) {
+  syncing.value = true
   try {
-    const letter = getPersonaLetter(currentPersona.value.key)
-    const result = await api.admin.ttsPersonas.update(letter, {
-      content: editForm.value.content,
-      voice: editForm.value.voice || null,
-      voice_description: editForm.value.voice_description || null,
-      change_reason: editForm.value.change_reason || null
-    })
+    const result = await api.admin.ttsPersonas.update(persona.code.toLowerCase(), buildUpdatePayload(persona))
     if (result.ok) {
-      ElMessage.success('更新成功')
-      drawerVisible.value = false
+      ElMessage.success(`${persona.name} 已同步为冰糖声线`)
       await fetchPersonas()
     } else {
-      ElMessage.error(result.data?.detail || '更新失败')
+      ElMessage.error(result.data?.detail || `${persona.name} 同步失败`)
     }
   } finally {
-    loading.value = false
+    syncing.value = false
   }
 }
 
-function openPreviewDialog(persona) {
-  currentPersona.value = persona
-  previewForm.value = {
-    voice_description: persona.voice_description || '',
-    sample_text: '这里是半坡遗址。先看眼前这件器物，再判断它能说明什么。'
+async function syncAll() {
+  syncing.value = true
+  let successCount = 0
+  let failedCount = 0
+
+  try {
+    for (const persona of BANPO_PERSONAS) {
+      const result = await api.admin.ttsPersonas.update(persona.code.toLowerCase(), buildUpdatePayload(persona))
+      if (result.ok) {
+        successCount += 1
+      } else {
+        failedCount += 1
+      }
+    }
+    await fetchPersonas()
+    if (failedCount) {
+      ElMessage.warning(`已同步 ${successCount} 个角色，${failedCount} 个失败`)
+    } else {
+      ElMessage.success('四个导览身份已统一为冰糖声线')
+    }
+  } finally {
+    syncing.value = false
   }
-  previewAudioUrl.value = ''
-  previewDialogVisible.value = true
 }
 
-async function handleVoicePreview() {
-  if (!previewForm.value.voice_description.trim()) {
-    ElMessage.warning('请输入音色描述')
-    return
+function playBase64Audio(base64, mimeType = 'audio/wav') {
+  const bytes = atob(base64)
+  const buffer = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i += 1) {
+    buffer[i] = bytes.charCodeAt(i)
   }
+  if (previewAudioUrl.value) {
+    URL.revokeObjectURL(previewAudioUrl.value)
+  }
+  previewAudioUrl.value = URL.createObjectURL(new Blob([buffer], { type: mimeType }))
+}
 
+async function previewVoice() {
   previewLoading.value = true
   try {
     const result = await api.admin.ttsPersonas.voicePreview({
-      voice_description: previewForm.value.voice_description,
-      sample_text: previewForm.value.sample_text
+      voice_description: TTS_VOICE_CONTRACT.description,
+      sample_text: TTS_VOICE_CONTRACT.sample,
     })
-    if (result.ok && result.data?.audio) {
-      const audioBytes = atob(result.data.audio)
-      const arrayBuffer = new Uint8Array(audioBytes.length)
-      for (let i = 0; i < audioBytes.length; i++) {
-        arrayBuffer[i] = audioBytes.charCodeAt(i)
-      }
-      const blob = new Blob([arrayBuffer], { type: 'audio/wav' })
-      previewAudioUrl.value = URL.createObjectURL(blob)
+    const audio = result.data?.audio || result.data?.audio_base64 || result.data?.data
+    if (result.ok && audio) {
+      playBase64Audio(audio, result.data?.mime_type || 'audio/wav')
     } else {
-      ElMessage.error(result.data?.detail || '音色预览生成失败')
+      ElMessage.error(result.data?.detail || '试听生成失败')
     }
   } finally {
     previewLoading.value = false
   }
 }
-
-async function openVersionDialog(persona) {
-  currentPersona.value = persona
-  versionDialogVisible.value = true
-  versionsLoading.value = true
-  versions.value = []
-
-  try {
-    const result = await api.admin.prompts.listVersions(persona.key, { limit: 50 })
-    if (result.ok) {
-      versions.value = result.data.versions || []
-    } else {
-      ElMessage.error(result.data?.detail || '获取版本历史失败')
-    }
-  } finally {
-    versionsLoading.value = false
-  }
-}
-
-async function handleRollback(version) {
-  try {
-    const { ElMessageBox } = await import('element-plus')
-    await ElMessageBox.confirm(
-      `确定要回滚到版本 ${version.version} 吗？这将创建一个新版本。`,
-      '确认回滚',
-      { type: 'warning' }
-    )
-  } catch {
-    return
-  }
-
-  versionsLoading.value = true
-  try {
-    const result = await api.admin.prompts.rollback(currentPersona.value.key, version.version)
-    if (result.ok) {
-      ElMessage.success('回滚成功')
-      await openVersionDialog(currentPersona.value)
-      await fetchPersonas()
-    } else {
-      ElMessage.error(result.data?.detail || '回滚失败')
-    }
-  } finally {
-    versionsLoading.value = false
-  }
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-function truncateText(text, maxLen = 40) {
-  if (!text) return '-'
-  return text.length > maxLen ? text.slice(0, maxLen) + '...' : text
-}
-
-onMounted(fetchPersonas)
 </script>
 
 <template>
   <div class="tts-persona-manager">
-    <div class="toolbar">
-      <h3>语音角色管理</h3>
-      <el-button type="primary" @click="fetchPersonas">
-        <el-icon><RefreshRight /></el-icon>
-        刷新
-      </el-button>
-    </div>
+    <header class="admin-hero">
+      <div>
+        <span class="kicker">TTS 契约</span>
+        <h2>语音角色管理</h2>
+        <p>小程序当前只保留“冰糖”美少女声线，四个导览身份共享同一声线，通过文本风格区分身份，避免出现中年男声或语速过慢的问题。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button :loading="loading" @click="fetchPersonas">
+          <el-icon><RefreshRight /></el-icon>
+          刷新
+        </el-button>
+        <el-button type="primary" :loading="syncing" @click="syncAll">同步四身份声线</el-button>
+      </div>
+    </header>
 
-    <el-table :data="personas" v-loading="loading" border>
-      <el-table-column label="角色" width="120">
+    <section class="voice-contract">
+      <div class="voice-card">
+        <span class="voice-icon">🍬</span>
+        <div>
+          <span class="kicker">唯一保留声线</span>
+          <h3>{{ TTS_VOICE_CONTRACT.label }}</h3>
+          <p>{{ TTS_VOICE_CONTRACT.description }}</p>
+          <blockquote>{{ TTS_VOICE_CONTRACT.sample }}</blockquote>
+          <div class="preview-row">
+            <el-button type="primary" plain :loading="previewLoading" @click="previewVoice">
+              <el-icon><VideoPlay /></el-icon>
+              生成试听
+            </el-button>
+            <audio v-if="previewAudioUrl" :src="previewAudioUrl" controls autoplay />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <el-table :data="rows" v-loading="loading || syncing" class="persona-table">
+      <el-table-column label="身份" min-width="230">
         <template #default="{ row }">
-          <el-tag :type="personaLabels[getPersonaLetter(row.key)]?.color || 'info'" size="small">
-            {{ personaLabels[getPersonaLetter(row.key)]?.name || row.key }}
+          <div class="persona-cell">
+            <span>{{ row.icon }}</span>
+            <div>
+              <strong>{{ row.name }}</strong>
+              <em>{{ row.focusTitle }}</em>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="prompt" label="导览角度" min-width="280" />
+      <el-table-column label="后端声线" width="180">
+        <template #default="{ row }">
+          <el-tag :type="row.synced ? 'success' : 'warning'" effect="plain">
+            {{ row.backendVoice || '未配置' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="150" />
-      <el-table-column label="风格提示词" min-width="200">
+      <el-table-column label="状态" width="150">
         <template #default="{ row }">
-          {{ truncateText(row.content) }}
+          <el-tag :type="row.synced ? 'success' : 'warning'">
+            {{ row.synced ? '已对齐' : '待同步' }}
+          </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="音色描述" min-width="200">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
-          {{ truncateText(row.voice_description) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="预设音色" width="120" align="center">
-        <template #default="{ row }">
-          <el-tag v-if="row.voice" size="small" type="info">{{ row.voice }}</el-tag>
-          <span v-else class="current-label">默认</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="current_version" label="版本" width="80" align="center">
-        <template #default="{ row }">
-          <el-tag size="small" type="success">v{{ row.current_version }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="updated_at" label="更新时间" width="160">
-        <template #default="{ row }">
-          {{ formatDate(row.updated_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
-        <template #default="{ row }">
-          <el-button type="primary" size="small" @click="openEditDrawer(row)">
-            <el-icon><Edit /></el-icon>
-            编辑
-          </el-button>
-          <el-button size="small" @click="openPreviewDialog(row)">
-            <el-icon><VideoPlay /></el-icon>
-            试听
-          </el-button>
-          <el-button size="small" @click="openVersionDialog(row)">
-            <el-icon><Clock /></el-icon>
-            历史
+          <el-button size="small" type="primary" plain @click="syncPersona(row)">
+            <el-icon><Headset /></el-icon>
+            同步
           </el-button>
         </template>
       </el-table-column>
     </el-table>
-
-    <!-- Edit Drawer -->
-    <el-drawer
-      v-model="drawerVisible"
-      title="编辑语音角色"
-      direction="rtl"
-      size="50%"
-    >
-      <template v-if="currentPersona">
-        <div class="drawer-content">
-          <el-descriptions :column="1" border>
-            <el-descriptions-item label="Key">
-              <el-tag>{{ currentPersona.key }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="角色">
-              <el-tag :type="personaLabels[getPersonaLetter(currentPersona.key)]?.color || 'info'">
-                {{ personaLabels[getPersonaLetter(currentPersona.key)]?.name }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="名称">{{ currentPersona.name }}</el-descriptions-item>
-            <el-descriptions-item label="当前版本">
-              v{{ currentPersona.current_version }}
-            </el-descriptions-item>
-          </el-descriptions>
-
-          <div class="editor-section">
-            <h4>风格提示词 <span class="required">*</span></h4>
-            <p class="field-hint">控制语音的语气、语速、风格等表达方式</p>
-            <el-input
-              v-model="editForm.content"
-              type="textarea"
-              :rows="6"
-              placeholder="请输入风格提示词"
-            />
-          </div>
-
-          <div class="editor-section">
-            <h4>预设音色</h4>
-            <p class="field-hint">选择该角色使用的预设音色，留空则使用全局默认音色</p>
-            <el-select
-              v-model="editForm.voice"
-              placeholder="使用全局默认音色"
-              clearable
-              style="width: 100%"
-            >
-              <el-option
-                v-for="v in presetVoices"
-                :key="v.value"
-                :label="v.label"
-                :value="v.value"
-              />
-            </el-select>
-          </div>
-
-          <div class="editor-section">
-            <h4>音色描述</h4>
-            <p class="field-hint">当前仅保留冰糖美少女声线；可描述语速、停顿和讲解气质。</p>
-            <el-input
-              v-model="editForm.voice_description"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入音色描述"
-            />
-          </div>
-
-          <div class="editor-section">
-            <h4>变更原因</h4>
-            <el-input
-              v-model="editForm.change_reason"
-              placeholder="请输入变更原因（可选）"
-            />
-          </div>
-        </div>
-
-        <div class="drawer-footer">
-          <el-button @click="drawerVisible = false">取消</el-button>
-          <el-button type="primary" :loading="loading" @click="handleUpdate">
-            保存
-          </el-button>
-        </div>
-      </template>
-    </el-drawer>
-
-    <!-- Voice Preview Dialog -->
-    <el-dialog
-      v-model="previewDialogVisible"
-      title="音色设计试听"
-      width="600px"
-    >
-      <template v-if="currentPersona">
-        <div class="preview-content">
-          <div class="editor-section">
-            <h4>音色描述</h4>
-            <p class="field-hint">描述想要的声音特征（如年龄、性别、口音、语调等）</p>
-            <el-input
-              v-model="previewForm.voice_description"
-              type="textarea"
-              :rows="3"
-              placeholder="例如：冰糖美少女声线，清甜明亮，语速自然偏快，停顿短"
-            />
-          </div>
-
-          <div class="editor-section">
-            <h4>试听文本</h4>
-            <el-input
-              v-model="previewForm.sample_text"
-              type="textarea"
-              :rows="2"
-              placeholder="请输入试听文本"
-            />
-          </div>
-
-          <el-button
-            type="primary"
-            :loading="previewLoading"
-            @click="handleVoicePreview"
-            style="margin-top: 12px"
-          >
-            <el-icon><Headset /></el-icon>
-            生成试听
-          </el-button>
-
-          <div v-if="previewAudioUrl" class="audio-player">
-            <audio :src="previewAudioUrl" controls autoplay style="width: 100%" />
-          </div>
-        </div>
-      </template>
-    </el-dialog>
-
-    <!-- Version History Dialog -->
-    <el-dialog
-      v-model="versionDialogVisible"
-      title="版本历史"
-      width="700px"
-    >
-      <el-table :data="versions" v-loading="versionsLoading" border max-height="400">
-        <el-table-column prop="version" label="版本" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.version === currentPersona?.current_version ? 'success' : 'info'">
-              v{{ row.version }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="changed_by" label="修改者" width="120">
-          <template #default="{ row }">
-            {{ row.changed_by || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="change_reason" label="变更原因" min-width="150">
-          <template #default="{ row }">
-            {{ row.change_reason || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160">
-          <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="100">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.version !== currentPersona?.current_version"
-              type="warning"
-              size="small"
-              @click="handleRollback(row)"
-            >
-              回滚
-            </el-button>
-            <span v-else class="current-label">当前</span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .tts-persona-manager {
-  padding: 20px;
+  min-height: 100%;
+  padding: 28px 34px 56px;
+  background: linear-gradient(180deg, #fffdf9 0%, #f8f2ea 100%);
 }
 
-.toolbar {
+.admin-hero,
+.voice-contract,
+.persona-table {
+  border-radius: 16px;
+  box-shadow: 0 14px 36px rgba(77, 49, 31, 0.07);
+}
+
+.admin-hero {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 24px;
+  border: 1px solid rgba(126, 91, 65, 0.16);
+  background: #fffaf3;
 }
 
-.toolbar h3 {
+.kicker {
+  color: #c57548;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-hero h2 {
+  margin: 8px 0;
+  color: #2f2118;
+  font-size: 28px;
+}
+
+.admin-hero p {
+  max-width: 760px;
   margin: 0;
-  font-size: 16px;
+  color: #7e6a59;
+  line-height: 1.7;
 }
 
-.drawer-content {
-  padding: 0 20px;
-  padding-bottom: 80px;
-}
-
-.editor-section {
-  margin-top: 20px;
-}
-
-.editor-section h4 {
-  margin-bottom: 4px;
-  font-size: 14px;
-  color: var(--el-text-color-primary);
-}
-
-.field-hint {
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.required {
-  color: var(--el-color-danger);
-}
-
-.drawer-footer {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 20px;
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-border-color-light);
+.hero-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-start;
   gap: 10px;
 }
 
-.audio-player {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
+.voice-contract {
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid rgba(126, 91, 65, 0.16);
+  background: rgba(255, 252, 247, 0.92);
 }
 
-.current-label {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
+.voice-card {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 18px;
+}
+
+.voice-icon {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  background: #f2e4d2;
+  font-size: 34px;
+}
+
+.voice-card h3 {
+  margin: 6px 0;
+  color: #2f2118;
+  font-size: 23px;
+}
+
+.voice-card p {
+  margin: 0;
+  color: #756252;
+  line-height: 1.7;
+}
+
+blockquote {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid #c57548;
+  background: #f7efe6;
+  color: #3b2b20;
+}
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.preview-row audio {
+  width: 360px;
+  max-width: 100%;
+}
+
+.persona-table {
+  overflow: hidden;
+}
+
+.persona-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.persona-cell span {
+  font-size: 28px;
+}
+
+.persona-cell strong,
+.persona-cell em {
+  display: block;
+}
+
+.persona-cell strong {
+  color: #2f2118;
+}
+
+.persona-cell em {
+  margin-top: 2px;
+  color: #987d67;
+  font-size: 13px;
+  font-style: normal;
 }
 </style>

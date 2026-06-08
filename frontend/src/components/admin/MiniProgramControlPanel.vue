@@ -2,13 +2,21 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  Collection,
   Document,
   MapLocation,
+  Microphone,
   Monitor,
   Refresh,
   Search,
 } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
+import {
+  BANPO_HALLS,
+  BANPO_PERSONAS,
+  TTS_VOICE_CONTRACT,
+  normalizeHallSlug,
+} from '../../constants/banpo.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -21,24 +29,65 @@ const ttsPersonas = ref([])
 const healthStatus = ref('unknown')
 const readyStatus = ref('unknown')
 
-const expectedHalls = [
-  { slug: 'basic-exhibition-hall', name: '基本陈列展厅', type: '常开', owner: '展厅设置' },
-  { slug: 'site-protection-hall', name: '遗址保护大厅', type: '常开', owner: '展厅设置' },
-  { slug: 'kiln-hall', name: '陶窑展厅', type: '常开', owner: '展厅设置' },
-  { slug: 'prehistoric-workshop', name: '史前工坊', type: '常开', owner: '展厅设置' },
-  { slug: 'banpo-girl-sculpture', name: '半坡姑娘雕塑', type: '常开', owner: '展厅设置' },
-  { slug: 'education-center', name: '教研中心', type: '常开', owner: '展厅设置' },
-  { slug: 'peony-garden', name: '牡丹园', type: '常开', owner: '展厅设置' },
-  { slug: 'temporary-hall-1', name: '临展厅一', type: '临展', owner: '展厅设置' },
-  { slug: 'temporary-hall-2', name: '临展厅二', type: '临展', owner: '展厅设置' },
-]
+const expectedHalls = BANPO_HALLS.map((hall) => ({
+  slug: hall.slug,
+  name: hall.name,
+  type: hall.type,
+  zone: hall.zone,
+  owner: '展厅设置',
+}))
 
-const personaContract = [
-  { code: 'A', personaId: 'A', label: '考古研究员', report: '半坡考古研究报告', route: '考古研究路线' },
-  { code: 'B', personaId: 'student/default', label: '研学记录员', report: '半坡研学记录报告', route: '研学记录路线' },
-  { code: 'C', personaId: 'historian', label: '历史追问者', report: '半坡历史追问报告', route: '历史追问路线' },
-  { code: 'D', personaId: 'artifact', label: '器物研究员', report: '半坡器物观察报告', route: '器物观察路线' },
-]
+const personaContract = Object.values(BANPO_PERSONAS).map((persona) => ({
+  code: persona.code,
+  personaId: persona.id,
+  label: persona.title,
+  report: persona.reportTitle,
+  route: persona.routeTitle,
+}))
+
+const missingExpectedHalls = computed(() => {
+  const current = new Set(halls.value.map((hall) => normalizeHallSlug(hall.slug)))
+  return expectedHalls.filter((hall) => !current.has(hall.slug))
+})
+
+const inactiveExpectedHalls = computed(() => {
+  const bySlug = new Map(halls.value.map((hall) => [normalizeHallSlug(hall.slug), hall]))
+  return expectedHalls.filter((hall) => bySlug.has(hall.slug) && bySlug.get(hall.slug)?.is_active === false)
+})
+
+const hasBingtangVoice = computed(() => {
+  if (!ttsPersonas.value.length) return false
+  return ttsPersonas.value.every((item) => !item.voice || item.voice === TTS_VOICE_CONTRACT.voice)
+})
+
+const dashboardStats = computed(() => [
+  {
+    label: '后端服务',
+    value: healthStatus.value === 'ok' ? '正常' : '待检查',
+    desc: readyStatus.value === 'ok' ? 'health / ready 均可用' : 'ready 状态未确认',
+    type: healthStatus.value === 'ok' ? 'success' : 'warning',
+  },
+  {
+    label: '展厅契约',
+    value: `${expectedHalls.length - missingExpectedHalls.value.length}/${expectedHalls.length}`,
+    desc: inactiveExpectedHalls.value.length
+      ? `${inactiveExpectedHalls.value.length} 个约定展厅未启用`
+      : '按小程序 canonical slug 检查',
+    type: missingExpectedHalls.value.length || inactiveExpectedHalls.value.length ? 'warning' : 'success',
+  },
+  {
+    label: '展项数据',
+    value: String(exhibits.value.length),
+    desc: '影响展品浏览、搜展品和 OCR fallback',
+    type: exhibits.value.length ? 'success' : 'warning',
+  },
+  {
+    label: '提示词',
+    value: String(prompts.value.length),
+    desc: '覆盖 RAG、策展、报告与语音人设',
+    type: prompts.value.length ? 'success' : 'warning',
+  },
+])
 
 const flowRows = computed(() => [
   {
@@ -47,19 +96,19 @@ const flowRows = computed(() => [
     backend: '/tour/sessions, persona A/B/C/D',
     control: '提示词管理、语音角色管理',
     status: ttsPersonas.value.length >= 4 ? 'ok' : 'warn',
-    note: ttsPersonas.value.length >= 4 ? '四身份语音配置已覆盖' : 'TTS 身份配置少于 4 个',
+    note: ttsPersonas.value.length >= 4 ? '四身份配置已覆盖' : 'TTS 身份配置少于 4 个',
     actions: [
-      { label: '看提示词', path: '/admin/prompts' },
-      { label: '看语音角色', path: '/admin/tts-personas' },
+      { label: '提示词', path: '/admin/prompts' },
+      { label: '语音角色', path: '/admin/tts-personas' },
     ],
   },
   {
     name: 'AI 策展路线',
-    miniapp: 'route 页先展示可用路线，再接入 AI plan',
+    miniapp: 'route 页先有可用路线，再接入 AI plan',
     backend: '/curator/plan-tour',
-    control: '提示词管理、LLM 调用追踪、路线管理',
+    control: '路线管理、提示词管理、LLM 调用追踪',
     status: healthStatus.value === 'ok' ? 'ok' : 'warn',
-    note: '小程序实际优先使用 curator plan；路线管理用于人工维护和兜底参考',
+    note: '小程序优先使用 curator plan；路线管理用于人工维护和兜底参考',
     actions: [
       { label: '路线管理', path: '/admin/tour-paths' },
       { label: '调用追踪', path: '/admin/llm-traces' },
@@ -85,7 +134,7 @@ const flowRows = computed(() => [
     note: exhibits.value.length ? '展品 API 有数据可供搜索和 OCR 匹配' : '当前未读取到展品数据',
     actions: [
       { label: '展品管理', path: '/admin/exhibits' },
-      { label: '知识库管理', path: '/admin/documents' },
+      { label: '知识库', path: '/admin/documents' },
     ],
   },
   {
@@ -94,21 +143,21 @@ const flowRows = computed(() => [
     backend: '/tour/sessions/:id/chat/stream, RAG prompts',
     control: '提示词管理、LLM 调用追踪',
     status: prompts.value.length ? 'ok' : 'warn',
-    note: '建议条即时规则在小程序端；回答风格和 RAG 可通过提示词与追踪排查',
+    note: '建议条即时规则在小程序端；回答风格、RAG 和报告边界可通过提示词与追踪排查',
     actions: [
-      { label: '提示词管理', path: '/admin/prompts' },
+      { label: '提示词', path: '/admin/prompts' },
       { label: 'LLM 追踪', path: '/admin/llm-traces' },
     ],
   },
   {
     name: '报告与 Reflection Engine',
-    miniapp: 'report 页直接渲染 halls_visited/highlights/reflection/record_notes',
+    miniapp: 'report 直接渲染 halls_visited / highlights / reflection / record_notes',
     backend: '/tour/sessions/:id/report',
     control: '提示词管理、LLM 调用追踪',
     status: healthStatus.value === 'ok' ? 'ok' : 'warn',
-    note: '报告主要由事件、展厅、展品和规则式 reflection 组成，不新增独立后台表',
+    note: '报告由事件、展厅、展品和规则式 reflection 组成，不新增独立后台表',
     actions: [
-      { label: '提示词管理', path: '/admin/prompts' },
+      { label: '提示词', path: '/admin/prompts' },
       { label: '调用追踪', path: '/admin/llm-traces' },
     ],
   },
@@ -118,8 +167,8 @@ const flowRows = computed(() => [
     backend: '/tts/synthesize',
     control: '语音角色管理',
     status: hasBingtangVoice.value ? 'ok' : 'warn',
-    note: hasBingtangVoice.value ? '当前后台只保留冰糖声线配置' : '未检测到冰糖声线配置',
-    actions: [{ label: '语音角色管理', path: '/admin/tts-personas' }],
+    note: hasBingtangVoice.value ? '当前后台只保留冰糖声线配置' : '未检测到统一冰糖声线配置',
+    actions: [{ label: '语音角色', path: '/admin/tts-personas' }],
   },
 ])
 
@@ -129,50 +178,6 @@ const quickActions = [
   { title: '调整导览提示词', desc: '控制 AI 回答风格、RAG 解释方式和报告文本边界。', icon: Document, path: '/admin/prompts' },
   { title: '排查线上回答', desc: '按调用记录查看 route、tour、report 的模型输入输出和错误。', icon: Monitor, path: '/admin/llm-traces' },
 ]
-
-const missingExpectedHalls = computed(() => {
-  const current = new Set(halls.value.map((hall) => hall.slug))
-  return expectedHalls.filter((hall) => !current.has(hall.slug))
-})
-
-const inactiveExpectedHalls = computed(() => {
-  const bySlug = new Map(halls.value.map((hall) => [hall.slug, hall]))
-  return expectedHalls.filter((hall) => bySlug.has(hall.slug) && bySlug.get(hall.slug)?.is_active === false)
-})
-
-const hasBingtangVoice = computed(() => {
-  if (!ttsPersonas.value.length) return false
-  return ttsPersonas.value.every((item) => !item.voice || item.voice === '冰糖')
-})
-
-const dashboardStats = computed(() => [
-  {
-    label: '服务状态',
-    value: healthStatus.value === 'ok' ? '正常' : '待检查',
-    desc: readyStatus.value === 'ok' ? 'health / ready 均可用' : 'ready 状态未确认',
-    type: healthStatus.value === 'ok' ? 'success' : 'warning',
-  },
-  {
-    label: '展厅契约',
-    value: `${expectedHalls.length - missingExpectedHalls.value.length}/${expectedHalls.length}`,
-    desc: inactiveExpectedHalls.value.length
-      ? `${inactiveExpectedHalls.value.length} 个约定展厅未启用`
-      : '按小程序 canonical slug 检查',
-    type: missingExpectedHalls.value.length || inactiveExpectedHalls.value.length ? 'warning' : 'success',
-  },
-  {
-    label: '展品数据',
-    value: String(exhibits.value.length),
-    desc: '影响展品浏览、搜展品和 OCR fallback',
-    type: exhibits.value.length ? 'success' : 'warning',
-  },
-  {
-    label: '提示词',
-    value: String(prompts.value.length),
-    desc: '覆盖 RAG、策展、报告与语音人设',
-    type: prompts.value.length ? 'success' : 'warning',
-  },
-])
 
 async function safeLoad(label, loader) {
   try {
@@ -270,7 +275,7 @@ onMounted(fetchDashboard)
       <div class="section-title">
         <div>
           <h2>闭环能力对齐</h2>
-          <p>小程序端每个功能都必须能在后台找到对应的数据、配置或排查入口。</p>
+          <p>小程序端每个功能都需要能在后台找到对应的数据、配置或排查入口。</p>
         </div>
       </div>
 
@@ -343,14 +348,14 @@ onMounted(fetchDashboard)
           <el-table-column label="后台状态" width="100">
             <template #default="{ row }">
               <el-tag
-                v-if="halls.some((hall) => hall.slug === row.slug && hall.is_active !== false)"
+                v-if="halls.some((hall) => normalizeHallSlug(hall.slug) === row.slug && hall.is_active !== false)"
                 type="success"
                 size="small"
               >
                 启用
               </el-tag>
               <el-tag
-                v-else-if="halls.some((hall) => hall.slug === row.slug)"
+                v-else-if="halls.some((hall) => normalizeHallSlug(hall.slug) === row.slug)"
                 type="warning"
                 size="small"
               >
@@ -381,25 +386,25 @@ onMounted(fetchDashboard)
 
 <style scoped>
 .mini-program-control {
-  padding: 24px;
   display: grid;
   gap: 18px;
-  background: var(--el-bg-color-page);
   min-height: 100%;
+  padding: 24px;
+  background: var(--el-bg-color-page);
 }
 
 .control-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  align-items: flex-start;
 }
 
 .eyebrow {
   margin: 0 0 6px;
   color: var(--el-color-primary);
-  font-weight: 600;
   font-size: 13px;
+  font-weight: 600;
 }
 
 h1,
@@ -454,9 +459,9 @@ h2 {
 }
 
 .stat-card {
-  padding: 16px;
   display: grid;
   gap: 8px;
+  padding: 16px;
 }
 
 .stat-label {
@@ -465,20 +470,20 @@ h2 {
 }
 
 .stat-value {
+  color: var(--el-text-color-primary);
   font-size: 24px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
 }
 
 .panel-section {
-  padding: 16px;
   min-width: 0;
+  padding: 16px;
 }
 
 .section-title {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -488,8 +493,8 @@ h2 {
 }
 
 .flow-name {
-  font-weight: 700;
   color: var(--el-text-color-primary);
+  font-weight: 700;
 }
 
 .action-group {
@@ -511,16 +516,16 @@ h2 {
 }
 
 .quick-card {
-  text-align: left;
-  border: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  border-radius: 8px;
-  padding: 16px;
-  min-height: 112px;
-  cursor: pointer;
   display: grid;
   gap: 8px;
+  min-height: 112px;
+  padding: 16px;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -530,8 +535,8 @@ h2 {
 }
 
 .quick-card .el-icon {
-  font-size: 22px;
   color: var(--el-color-primary);
+  font-size: 22px;
 }
 
 .quick-title {
@@ -540,8 +545,8 @@ h2 {
 
 .quick-desc {
   color: var(--el-text-color-secondary);
-  line-height: 1.5;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1180px) {
