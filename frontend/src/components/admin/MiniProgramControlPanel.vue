@@ -262,6 +262,14 @@ function flowTagText(status) {
   return status === 'ok' ? '已对齐' : '需检查'
 }
 
+function hallContractStatus(row) {
+  const hall = halls.value.find((item) => normalizeHallSlug(item.slug) === row.slug)
+  if (!hall) return { type: 'danger', text: '缺失' }
+  return hall.is_active === false
+    ? { type: 'warning', text: '未启用' }
+    : { type: 'success', text: '启用' }
+}
+
 onMounted(fetchDashboard)
 </script>
 
@@ -312,36 +320,42 @@ onMounted(fetchDashboard)
         </div>
       </div>
 
-      <el-table :data="flowRows" border class="flow-table">
-        <el-table-column prop="name" label="小程序能力" min-width="160">
-          <template #default="{ row }">
-            <div class="flow-name">{{ row.name }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="miniapp" label="小程序链路" min-width="220" />
-        <el-table-column prop="backend" label="后端契约" min-width="220" />
-        <el-table-column prop="control" label="管理端控制点" min-width="180" />
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
+      <div class="flow-list">
+        <article v-for="row in flowRows" :key="row.name" class="flow-card">
+          <div class="flow-card-head">
+            <h3>{{ row.name }}</h3>
             <el-tag :type="flowTagType(row.status)" size="small">{{ flowTagText(row.status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="note" label="说明" min-width="240" />
-        <el-table-column label="操作" width="220">
-          <template #default="{ row }">
-            <div class="action-group">
-              <el-button
-                v-for="action in row.actions"
-                :key="action.path + action.label"
-                size="small"
-                @click="go(action.path)"
-              >
-                {{ action.label }}
-              </el-button>
+          </div>
+          <div class="flow-grid">
+            <div class="flow-field">
+              <span>小程序链路</span>
+              <p>{{ row.miniapp }}</p>
             </div>
-          </template>
-        </el-table-column>
-      </el-table>
+            <div class="flow-field">
+              <span>后端契约</span>
+              <p>{{ row.backend }}</p>
+            </div>
+            <div class="flow-field">
+              <span>管理端控制点</span>
+              <p>{{ row.control }}</p>
+            </div>
+            <div class="flow-field flow-note">
+              <span>说明</span>
+              <p>{{ row.note }}</p>
+            </div>
+          </div>
+          <div class="action-group">
+            <el-button
+              v-for="action in row.actions"
+              :key="action.path + action.label"
+              size="small"
+              @click="go(action.path)"
+            >
+              {{ action.label }}
+            </el-button>
+          </div>
+        </article>
+      </div>
     </section>
 
     <section class="panel-section">
@@ -351,12 +365,25 @@ onMounted(fetchDashboard)
           <p>这里区分“保存后立即影响小程序”和“需要发布小程序代码”的配置。</p>
         </div>
       </div>
-      <el-table :data="syncRows" border class="flow-table">
-        <el-table-column prop="area" label="管理内容" min-width="150" />
-        <el-table-column prop="runtime" label="小程序读取方式" min-width="240" />
-        <el-table-column prop="effect" label="生效方式" min-width="220" />
-        <el-table-column prop="note" label="说明" min-width="260" />
-      </el-table>
+      <div class="sync-list">
+        <article v-for="row in syncRows" :key="row.area" class="sync-card">
+          <h3>{{ row.area }}</h3>
+          <div class="sync-grid">
+            <div class="flow-field">
+              <span>小程序读取方式</span>
+              <p>{{ row.runtime }}</p>
+            </div>
+            <div class="flow-field">
+              <span>生效方式</span>
+              <p>{{ row.effect }}</p>
+            </div>
+            <div class="flow-field">
+              <span>说明</span>
+              <p>{{ row.note }}</p>
+            </div>
+          </div>
+        </article>
+      </div>
     </section>
 
     <section class="two-column">
@@ -370,13 +397,19 @@ onMounted(fetchDashboard)
             管理语音角色
           </el-button>
         </div>
-        <el-table :data="personaContract" border size="small">
-          <el-table-column prop="code" label="后端" width="70" />
-          <el-table-column prop="personaId" label="前端 personaId" min-width="120" />
-          <el-table-column prop="label" label="展示名" min-width="110" />
-          <el-table-column prop="route" label="路线主题" min-width="130" />
-          <el-table-column prop="report" label="报告标题" min-width="150" />
-        </el-table>
+        <div class="contract-list">
+          <article v-for="row in personaContract" :key="row.code" class="contract-card">
+            <div class="contract-main">
+              <strong>{{ row.label }}</strong>
+              <span>{{ row.report }}</span>
+            </div>
+            <div class="contract-meta">
+              <span>后端 {{ row.code }}</span>
+              <span>前端 {{ row.personaId }}</span>
+              <span>{{ row.route }}</span>
+            </div>
+          </article>
+        </div>
       </div>
 
       <div class="panel-section">
@@ -389,30 +422,21 @@ onMounted(fetchDashboard)
             管理展厅
           </el-button>
         </div>
-        <el-table :data="expectedHalls" border size="small" max-height="360">
-          <el-table-column prop="name" label="中文名" min-width="130" />
-          <el-table-column prop="slug" label="canonical slug" min-width="190" />
-          <el-table-column prop="type" label="类型" width="80" />
-          <el-table-column label="后台状态" width="100">
-            <template #default="{ row }">
-              <el-tag
-                v-if="halls.some((hall) => normalizeHallSlug(hall.slug) === row.slug && hall.is_active !== false)"
-                type="success"
-                size="small"
-              >
-                启用
+        <div class="contract-list hall-contract-list">
+          <article v-for="row in expectedHalls" :key="row.slug" class="contract-card hall-card">
+            <div class="contract-main">
+              <strong>{{ row.name }}</strong>
+              <span>{{ row.slug }}</span>
+            </div>
+            <div class="contract-meta">
+              <span>{{ row.type }}</span>
+              <span>{{ row.zone }}</span>
+              <el-tag :type="hallContractStatus(row).type" size="small">
+                {{ hallContractStatus(row).text }}
               </el-tag>
-              <el-tag
-                v-else-if="halls.some((hall) => normalizeHallSlug(hall.slug) === row.slug)"
-                type="warning"
-                size="small"
-              >
-                未启用
-              </el-tag>
-              <el-tag v-else type="danger" size="small">缺失</el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
+            </div>
+          </article>
+        </div>
       </div>
     </section>
 
@@ -540,15 +564,118 @@ h2 {
   align-items: center;
 }
 
-.flow-name {
-  color: var(--el-text-color-primary);
-  font-weight: 700;
-}
-
 .action-group {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.flow-list,
+.sync-list,
+.contract-list {
+  display: grid;
+  gap: 12px;
+}
+
+.flow-card,
+.sync-card,
+.contract-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+}
+
+.flow-card-head,
+.contract-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flow-card h3,
+.sync-card h3 {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.flow-grid,
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.sync-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.flow-field {
+  min-width: 0;
+}
+
+.flow-field span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.flow-field p {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.flow-note {
+  grid-column: auto;
+}
+
+.contract-list {
+  max-height: 390px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.contract-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.contract-main strong {
+  color: var(--el-text-color-primary);
+  line-height: 1.4;
+}
+
+.contract-main span,
+.contract-meta {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.contract-meta {
+  display: flex;
+  flex: 0 1 58%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 10px;
+}
+
+.contract-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .two-column {
@@ -606,6 +733,11 @@ h2 {
   .two-column {
     grid-template-columns: 1fr;
   }
+
+  .flow-grid,
+  .sync-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -621,6 +753,21 @@ h2 {
   .stat-grid,
   .quick-grid {
     grid-template-columns: 1fr;
+  }
+
+  .flow-grid,
+  .sync-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-card-head,
+  .contract-card {
+    flex-direction: column;
+  }
+
+  .contract-meta {
+    justify-content: flex-start;
+    flex-basis: auto;
   }
 }
 </style>

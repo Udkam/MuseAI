@@ -369,7 +369,7 @@ function miniProgramFallbackRoute(persona) {
   return {
     persona,
     title: '小程序本地兜底路线',
-    summary: '与小程序 route 页固定 9 站 fallback 完全一致；身份只影响后端 AI plan payload，不改变本地兜底顺序。',
+    summary: '',
     total_minutes: 102,
     steps: MINI_PROGRAM_FALLBACK_STEPS,
   }

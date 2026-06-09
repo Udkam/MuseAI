@@ -19,7 +19,7 @@ const formRef = ref(null)
 const exhibits = ref([])
 const halls = ref([])
 const selectedRows = ref([])
-const batchHall = ref('')
+const batchHall = ref('basic-exhibition-hall')
 const batchDeleting = ref(false)
 const batchBinding = ref(false)
 const problemResolving = ref(false)
@@ -84,6 +84,7 @@ const unmappedRows = computed(() => activeNormalizedExhibits.value.filter((item)
 const problemRows = computed(() => [...nonExhibitRows.value, ...unmappedRows.value])
 const selectedUnmappedRows = computed(() => selectedRows.value.filter((item) => !activeHallSlugs.value.has(item.hall)))
 const rowsToBatchBind = computed(() => selectedUnmappedRows.value.length ? selectedUnmappedRows.value : unmappedRows.value)
+const batchBindActionLabel = computed(() => selectedUnmappedRows.value.length ? '绑定所选异常项' : '绑定全部异常项')
 
 const stats = computed(() => [
   { label: '展项总数', value: normalizedExhibits.value.length, hint: '后台展品库' },
@@ -118,6 +119,9 @@ function normalizeExhibit(item) {
 async function fetchHalls() {
   const result = await api.admin.listHalls({ include_inactive: 'true' })
   halls.value = result.ok ? mergeHallsWithContract(result.data.halls || []) : mergeHallsWithContract([])
+  if (!canonicalHalls.value.some((hall) => hall.slug === batchHall.value)) {
+    batchHall.value = canonicalHalls.value[0]?.slug || 'basic-exhibition-hall'
+  }
 }
 
 async function fetchExhibits() {
@@ -401,7 +405,7 @@ async function handleBatchDelete() {
     >
       <template #default>
         有 {{ unmappedRows.length }} 条展项未绑定到当前半坡 canonical slug，会影响展厅筛选、报告统计和 OCR 匹配。
-        可勾选这些展项后，在工具栏选择展厅并批量绑定。
+        默认会绑定到基本陈列展厅；如需改到其他展厅，请先在工具栏切换目标展厅。
       </template>
     </el-alert>
 
@@ -418,7 +422,7 @@ async function handleBatchDelete() {
         <el-option label="停用展项" value="inactive" />
         <el-option label="全部状态" value="all" />
       </el-select>
-      <el-select v-model="batchHall" placeholder="选择异常项目标展厅" clearable filterable>
+      <el-select v-model="batchHall" placeholder="异常项目标展厅" filterable>
         <el-option v-for="hall in canonicalHalls" :key="hall.slug" :label="hall.name" :value="hall.slug" />
       </el-select>
       <el-button
@@ -428,7 +432,7 @@ async function handleBatchDelete() {
         :disabled="batchBinding || !rowsToBatchBind.length || !batchHall"
         @click="handleBatchBindHall"
       >
-        绑定异常项 ({{ rowsToBatchBind.length }})
+        {{ batchBindActionLabel }} ({{ rowsToBatchBind.length }})
       </el-button>
       <el-button
         type="danger"
@@ -614,6 +618,8 @@ async function handleBatchDelete() {
 
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -649,10 +655,25 @@ async function handleBatchDelete() {
 }
 
 .toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) 200px 170px 140px 200px auto auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.toolbar :deep(.el-input) {
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+
+.toolbar :deep(.el-select) {
+  flex: 1 1 150px;
+  min-width: 140px;
+}
+
+.toolbar :deep(.el-button) {
+  flex: 0 0 auto;
 }
 
 .exhibit-table {
@@ -751,7 +772,6 @@ async function handleBatchDelete() {
 }
 
 @media (max-width: 1180px) {
-  .toolbar,
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
