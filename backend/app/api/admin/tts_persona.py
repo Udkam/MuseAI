@@ -25,10 +25,10 @@ router = APIRouter(prefix="/admin/tts", tags=["admin-tts"])
 VALID_PERSONAS = {"a", "b", "c", "d"}
 PERSONA_KEY_PREFIX = "tour_tts_persona_"
 PERSONA_DEFAULTS = {
-    "a": {"name": "Tour TTS Persona A", "description": "Archaeology researcher voice persona"},
-    "b": {"name": "Tour TTS Persona B", "description": "Study recorder voice persona"},
-    "c": {"name": "Tour TTS Persona C", "description": "Historical questioner voice persona"},
-    "d": {"name": "Tour TTS Persona D", "description": "Artifact researcher voice persona"},
+    "a": {"name": "Tour TTS - 考古研究员", "description": "考古研究员语音人设"},
+    "b": {"name": "Tour TTS - 研学记录员", "description": "研学记录员语音人设"},
+    "c": {"name": "Tour TTS - 历史追问者", "description": "历史追问者语音人设"},
+    "d": {"name": "Tour TTS - 器物研究员", "description": "器物研究员语音人设"},
 }
 
 
@@ -119,15 +119,45 @@ def _build_tts_variables(base_variables: list | None, voice_description: str | N
     return new_variables
 
 
+def _default_tts_content(persona_code: str) -> str:
+    names = {"a": "考古研究员", "b": "研学记录员", "c": "历史追问者", "d": "器物研究员"}
+    return (
+        f"【导览身份】{names[persona_code]}\n"
+        "【播报声线】统一使用冰糖声线。声音应清亮、自然、偏年轻女性；"
+        "语速稍快但吐字清楚，避免中年男声、拖沓停顿和过度戏剧化。\n"
+        "【播报方式】像现场导览员一样直接说明重点，不读出 Markdown 标记，不读出内部处理说明。"
+    )
+
+
 @router.get("/personas", response_model=TtsPersonaListResponse, summary="List TTS personas")
 async def list_tts_personas(
     session: SessionDep,
     current_user: CurrentAdminUser,
 ) -> TtsPersonaListResponse:
     repository = PostgresPromptRepository(session)
-    prompts = await repository.list_all(category="tts")
+    existing_prompts = await repository.list_all(category="tts")
+    by_key = {prompt.key: prompt for prompt in existing_prompts}
+    created = False
+    for persona_code, defaults in PERSONA_DEFAULTS.items():
+        key = f"{PERSONA_KEY_PREFIX}{persona_code}"
+        if key in by_key:
+            continue
+        prompt = await repository.create(
+            key=key,
+            name=defaults["name"],
+            category="tts",
+            content=_default_tts_content(persona_code),
+            description=defaults["description"],
+            variables=_build_tts_variables([], None),
+        )
+        by_key[key] = prompt
+        created = True
+    if created:
+        await session.commit()
+
+    prompts = [by_key[f"{PERSONA_KEY_PREFIX}{code}"] for code in sorted(PERSONA_DEFAULTS)]
     return TtsPersonaListResponse(
-        personas=[_persona_to_response(p) for p in prompts],
+        personas=[_persona_to_response(p) for p in prompts if p.is_active],
         total=len(prompts),
     )
 

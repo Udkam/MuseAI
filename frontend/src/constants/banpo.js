@@ -127,34 +127,17 @@ export const BANPO_HALLS = [
   },
 ]
 
-export const LEGACY_HALL_SLUGS = {
-  'relic-hall': 'basic-exhibition-hall',
-  'pottery-spirit-hall': 'basic-exhibition-hall',
-  'civilization-spark-hall': 'basic-exhibition-hall',
-  'site-hall': 'site-protection-hall',
-  'site-archaeology-hall': 'site-protection-hall',
-  'bronze-a': 'basic-exhibition-hall',
-  'bronze-b': 'basic-exhibition-hall',
-  ceramics: 'kiln-hall',
-  'painting-a': 'basic-exhibition-hall',
-  'painting-b': 'basic-exhibition-hall',
-  jade: 'basic-exhibition-hall',
-  'gold-silver': 'basic-exhibition-hall',
-  sculpture: 'banpo-girl-sculpture',
-  special: 'temporary-hall-1',
-}
-
 export const BANPO_HALLS_BY_SLUG = Object.fromEntries(BANPO_HALLS.map((hall) => [hall.slug, hall]))
 export const BANPO_HALLS_BY_KEY = Object.fromEntries(BANPO_HALLS.map((hall) => [hall.key, hall]))
 export const CANONICAL_HALL_SLUGS = new Set(BANPO_HALLS.map((hall) => hall.slug))
 
 export function normalizeHallSlug(value) {
   if (!value) return ''
-  return LEGACY_HALL_SLUGS[value] || value
+  return CANONICAL_HALL_SLUGS.has(value) ? value : ''
 }
 
 export function isCanonicalHallSlug(value) {
-  return CANONICAL_HALL_SLUGS.has(normalizeHallSlug(value))
+  return CANONICAL_HALL_SLUGS.has(value)
 }
 
 export function getHallBySlug(value) {
@@ -233,8 +216,8 @@ export function getLegacyHallRows(records = []) {
       const rawSlug = item.slug || item.hall || item.hall_slug
       return {
         ...item,
-        targetSlug: normalizeHallSlug(rawSlug),
-        targetName: getHallDisplayName(rawSlug),
+        targetSlug: '',
+        targetName: '契约外展厅',
       }
     })
 }
@@ -253,7 +236,7 @@ export const BANPO_PERSONAS = [
   },
   {
     code: 'B',
-    personaId: 'student',
+    personaId: 'B',
     focusId: 'study',
     name: '研学记录员',
     focusTitle: '带着任务研学',
@@ -264,7 +247,7 @@ export const BANPO_PERSONAS = [
   },
   {
     code: 'C',
-    personaId: 'historian',
+    personaId: 'C',
     focusId: 'history',
     name: '历史追问者',
     focusTitle: '历史问题追问',
@@ -275,8 +258,8 @@ export const BANPO_PERSONAS = [
   },
   {
     code: 'D',
-    personaId: 'artifact',
-    focusId: 'artifact',
+    personaId: 'D',
+    focusId: 'object-study',
     name: '器物研究员',
     focusTitle: '器物细节观察',
     routeTitle: '器物观察路线',

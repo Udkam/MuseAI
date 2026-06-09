@@ -15,7 +15,17 @@ const subStep = ref('hall-intro')
 const exhibits = ref([])
 const loadingExhibits = ref(true)
 
-const hallNames = { 'relic-hall': '出土文物展厅', 'site-hall': '遗址保护大厅' }
+const hallNames = {
+  'basic-exhibition-hall': '基本陈列展厅',
+  'site-protection-hall': '遗址保护大厅',
+  'kiln-hall': '陶窑展厅',
+  'prehistoric-workshop': '史前工坊',
+  'banpo-girl-sculpture': '半坡姑娘雕塑',
+  'education-center': '教研中心',
+  'peony-garden': '牡丹园',
+  'temporary-hall-1': '临展厅一',
+  'temporary-hall-2': '临展厅二',
+}
 const currentHallName = computed(() => hallNames[currentHall.value] || currentHall.value)
 const hasNextExhibit = computed(() => exhibitIndex.value < exhibits.value.length - 1)
 const nextExhibit = computed(() => hasNextExhibit.value ? exhibits.value[exhibitIndex.value + 1] : null)

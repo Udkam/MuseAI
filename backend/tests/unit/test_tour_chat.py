@@ -141,8 +141,8 @@ def test_build_system_prompt_persona_d():
 
 
 def test_build_system_prompt_with_hall():
-    prompt = build_system_prompt(persona="A", assumption="A", hall="relic-hall")
-    assert HALL_DESCRIPTIONS["relic-hall"] in prompt
+    prompt = build_system_prompt(persona="A", assumption="A", hall="basic-exhibition-hall")
+    assert HALL_DESCRIPTIONS["basic-exhibition-hall"] in prompt
 
 
 def test_build_system_prompt_with_unknown_hall():
@@ -218,13 +218,13 @@ def test_build_system_prompt_all_parts():
     prompt = build_system_prompt(
         persona="B",
         assumption="C",
-        hall="site-hall",
+        hall="site-protection-hall",
         exhibit_context="半地穴式房屋",
         visited_exhibits=["exhibit-1"],
     )
     assert PERSONA_PROMPTS["B"] in prompt
     assert ASSUMPTION_CONTEXTS["C"] in prompt
-    assert HALL_DESCRIPTIONS["site-hall"] in prompt
+    assert HALL_DESCRIPTIONS["site-protection-hall"] in prompt
     assert "半地穴式房屋" in prompt
     assert "exhibit-1" in prompt
 
@@ -243,8 +243,15 @@ def test_assumption_contexts_have_all_keys():
 
 
 def test_hall_descriptions_have_expected_slugs():
-    assert "relic-hall" in HALL_DESCRIPTIONS
-    assert "site-hall" in HALL_DESCRIPTIONS
+    assert "basic-exhibition-hall" in HALL_DESCRIPTIONS
+    assert "site-protection-hall" in HALL_DESCRIPTIONS
+    assert "kiln-hall" in HALL_DESCRIPTIONS
+    assert "prehistoric-workshop" in HALL_DESCRIPTIONS
+    assert "banpo-girl-sculpture" in HALL_DESCRIPTIONS
+    assert "education-center" in HALL_DESCRIPTIONS
+    assert "peony-garden" in HALL_DESCRIPTIONS
+    assert "temporary-hall-1" in HALL_DESCRIPTIONS
+    assert "temporary-hall-2" in HALL_DESCRIPTIONS
 
 
 @pytest.mark.asyncio

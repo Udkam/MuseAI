@@ -10,19 +10,7 @@ from .exhibit_service import ExhibitService
 from .profile_service import ProfileService
 
 
-_PERSONA_ALIASES = {
-    "A": "A",
-    "B": "B",
-    "C": "C",
-    "D": "D",
-    "default": "default",
-    "student": "B",
-    "historian": "C",
-    "artifact": "D",
-    "artisan": "D",
-    "resident": "B",
-    "community": "C",
-}
+_PERSONA_IDS = {"A", "B", "C", "D", "default"}
 
 _ROUTE_PROFILES = {
     "A": {
@@ -207,16 +195,17 @@ def _normalize_persona(interests: list[str] | None) -> str:
         if not text:
             continue
         match = re.search(
-            r"(?:persona|personaId)\s*[:=]\s*(default|student|historian|artifact|artisan|resident|community|[A-Da-d])\b",
+            r"(?:persona|personaId)\s*[:=]\s*(default|[A-Da-d])\b",
             text,
         )
         if match:
             token = match.group(1)
-            return _PERSONA_ALIASES.get(token, _PERSONA_ALIASES.get(token.lower(), token.upper()))
+            normalized = token if token == "default" else token.upper()
+            return normalized if normalized in _PERSONA_IDS else "default"
 
     joined = " ".join(str(item) for item in interests)
-    for alias, code in _PERSONA_ALIASES.items():
-        if alias != "default" and alias in joined:
+    for code in ("A", "B", "C", "D"):
+        if f"persona:{code}" in joined or f"personaId:{code}" in joined:
             return code
     return "default"
 

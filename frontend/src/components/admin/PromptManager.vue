@@ -22,6 +22,12 @@ const editForm = ref({
   content: '',
   change_reason: ''
 })
+const CANONICAL_TTS_KEYS = new Set([
+  'tour_tts_persona_a',
+  'tour_tts_persona_b',
+  'tour_tts_persona_c',
+  'tour_tts_persona_d'
+])
 
 // Category labels
 const categoryLabels = {
@@ -56,7 +62,9 @@ async function fetchPrompts() {
   try {
     const result = await api.admin.prompts.list()
     if (result.ok) {
-      prompts.value = result.data.prompts || []
+      prompts.value = (result.data.prompts || []).filter((prompt) => {
+        return prompt.category !== 'tts' || CANONICAL_TTS_KEYS.has(prompt.key)
+      })
     } else {
       ElMessage.error(result.data?.detail || '获取提示词列表失败')
     }
@@ -221,7 +229,7 @@ onMounted(fetchPrompts)
           {{ formatDate(row.updated_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="220">
         <template #default="{ row }">
           <el-button type="primary" size="small" @click="openEditDrawer(row)">
             <el-icon><Edit /></el-icon>

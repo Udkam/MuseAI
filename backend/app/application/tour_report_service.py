@@ -91,11 +91,6 @@ HALL_TOPIC_WEIGHTS = {
     "education-center": {"evidence": 2},
     "banpo-girl-sculpture": {"spiritual": 1, "social": 1},
     "peony-garden": {"life": 1},
-    "pottery-spirit-hall": {"craft": 2, "spiritual": 1},
-    "site-archaeology-hall": {"settlement": 2, "social": 1},
-    "civilization-spark-hall": {"evidence": 1, "spiritual": 1},
-    "relic-hall": {"craft": 1, "life": 1},
-    "site-hall": {"settlement": 2, "social": 1},
 }
 
 
@@ -188,7 +183,7 @@ def build_reflection_summary(
     for event in events or []:
         event_type = getattr(event, "event_type", "") or ""
         metadata = getattr(event, "metadata", None) or {}
-        hall = normalize_hall(getattr(event, "hall", None)) or getattr(event, "hall", None) or ""
+        hall = normalize_hall(getattr(event, "hall", None)) or ""
         text = _reflection_event_text(event, metadata, hall)
 
         if event_type == "exhibit_question":
@@ -200,7 +195,7 @@ def build_reflection_summary(
         elif event_type == "exhibit_view":
             weight = 1.0
         elif event_type in {"hall_enter", "hall_leave"}:
-            weight = 0.75
+            weight = 0.0
         else:
             weight = 0.5
 
@@ -312,7 +307,9 @@ def aggregate_stats(events: list, tour_session) -> dict:
             exhibit_durations[eid] = exhibit_durations.get(eid, 0) + event.duration_seconds
             viewed_exhibits.add(eid)
         elif event.event_type == "hall_leave" and event.hall and event.duration_seconds:
-            hall = normalize_hall(event.hall) or event.hall
+            hall = normalize_hall(event.hall)
+            if not hall:
+                continue
             hall_durations[hall] = hall_durations.get(hall, 0) + event.duration_seconds
         elif event.event_type == "exhibit_question":
             total_questions += 1

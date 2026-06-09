@@ -152,7 +152,7 @@ async function handleSubmit() {
       <div>
         <span class="kicker">小程序契约</span>
         <h2>半坡展厅设置</h2>
-        <p>这里维护的是小程序、路线、报告和展品搜索共用的 canonical hall slug。临展厅默认排在最后，旧馆名只保留兼容映射。</p>
+        <p>这里维护的是小程序、路线、报告和展品搜索共用的 canonical hall slug。当前只保留展厅信息导入的 9 个展厅。</p>
       </div>
       <div class="hero-actions">
         <el-button :loading="fetchLoading" @click="fetchHalls">刷新</el-button>
@@ -174,7 +174,7 @@ async function handleSubmit() {
         <strong>{{ activeCount }}</strong>
       </div>
       <div class="stat-card warn">
-        <span>旧 slug 记录</span>
+        <span>契约外记录</span>
         <strong>{{ legacyRows.length }}</strong>
       </div>
     </section>
@@ -185,12 +185,12 @@ async function handleSubmit() {
       :closable="false"
       show-icon
       class="legacy-alert"
-      title="检测到旧展厅 slug"
+      title="检测到契约外展厅记录"
     >
       <template #default>
         <div class="legacy-list">
           <span v-for="item in legacyRows" :key="item.slug">
-            {{ item.name || item.slug }} -> {{ item.targetName }} ({{ item.targetSlug }})
+            {{ item.name || item.slug }}，请点击“同步半坡展厅契约”清理
           </span>
         </div>
       </template>
@@ -231,7 +231,7 @@ async function handleSubmit() {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="180">
         <template #default="{ row }">
           <el-button size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button type="primary" size="small" plain @click="syncOneHall(row)">同步</el-button>

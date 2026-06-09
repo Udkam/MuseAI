@@ -19,11 +19,13 @@ The backend is currently in **Stage 13: pre-launch closed-loop validation and re
   - `C` History Inquirer
   - `D` Artifact Researcher
 - Three-step onboarding context: focus, assumption, and guide mode.
-- Canonical hall slug normalization, Chinese display names, and legacy alias compatibility.
+- Canonical hall slug normalization and Chinese display names. Only the nine halls from the Banpo hall contract are accepted.
 - Event tracking for hall enter, exhibit view, questions, and deep dives.
 - AI curator route API: `/api/v1/curator/plan-tour`.
 - Exhibit listing, detail lookup, hall filtering, and text search.
 - Visit report generation: visited halls, reflection, record summary, and basic stats.
+  - Visited halls are counted only from real feature-use events: questions, AI answers, exhibit views, and deep dives.
+  - Record notes are grouped by hall from user questions and AI answers without extra LLM calls.
 - Reflection Engine without new database tables, new APIs, or new model calls.
 - RAG pipeline with query rewrite, Elasticsearch retrieval, rerank, document filtering, and streaming generation.
 - LLM model tiers:
@@ -97,6 +99,19 @@ backend/
 | Exhibit list | `GET /api/v1/exhibits` |
 | Exhibit detail | `GET /api/v1/exhibits/{id}` |
 | TTS synthesize | `POST /api/v1/tts/synthesize` |
+
+## Report And Event Contract
+
+Report statistics depend on `tour_events`. Frontend events should use one of the nine canonical hall slugs, or the matching Chinese hall name. Legacy hall slugs are no longer mapped; hall values that cannot be normalized to the nine-hall contract are dropped.
+
+Visited halls are counted from:
+
+- `exhibit_question`
+- `assistant_answer`
+- `exhibit_view`
+- `exhibit_deep_dive`
+
+Simply entering a hall is not enough to count it as visited in the report. The user must actually use a feature in that hall, such as asking a question, tapping a suggestion that asks a question, viewing an exhibit, or starting a deep dive.
 
 ## Environment Variables
 
@@ -173,12 +188,18 @@ uv run --extra dev pytest -q
 
 ## Server Deployment Notes
 
-The current server has used this shape:
+The current server resource budget is now **2 CPU cores / 8 GB RAM**. Deployment and performance tuning should use that budget. The current server has used this shape:
 
 - Uvicorn listens on `127.0.0.1:8000`.
 - Nginx proxies traffic to the backend.
 - Development debugging can use `http://122.152.232.190:3000/api/v1`.
 - Formal mini-program traffic should use `https://api.banpo-museai.xyz/api/v1`, but it cannot be treated as production-ready before filing and WeChat legal-domain approval pass.
+
+Recommended for 2 CPU cores / 8 GB RAM:
+
+- Keep the backend at one Uvicorn worker by default, so Redis, Elasticsearch, PostgreSQL, and Python do not compete aggressively for memory.
+- RAG, rerank, and TTS rely on external services; control concurrency and timeouts to protect streaming guide latency.
+- If Elasticsearch, Redis, PostgreSQL, and the backend run on the same host, monitor memory continuously and split search or database services first as data grows.
 
 Typical manual update flow:
 

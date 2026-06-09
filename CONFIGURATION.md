@@ -785,6 +785,18 @@ RATE_LIMIT_ENABLED=true
 
 ---
 
+## 生产资源预算
+
+当前服务器资源口径为 **2 核 / 8 GB RAM**。后端、Redis、Elasticsearch、PostgreSQL 如同机部署，应按小型单机预算配置：
+
+- 后端默认使用 1 个 Uvicorn worker，优先保证 SSE 流式导览回答稳定。
+- RAG、rerank、TTS 均依赖外部服务，线上应通过超时、重试和限流保护主进程。
+- Elasticsearch 和 PostgreSQL 是主要内存占用来源；数据量增长后，优先把检索或数据库拆到独立服务。
+- `.env` 中不要通过提高 `LLM_MAX_TOKENS` 或检索数量来硬扩上下文，除非已完成真机延迟验证。
+- 线上配置变更后必须重启后端进程，并检查 `/api/v1/health`、流式导览、TTS 和报告生成。
+
+---
+
 ## 生产环境检查清单
 
 生产部署时，以下配置**必须**正确设置，否则应用将拒绝启动：

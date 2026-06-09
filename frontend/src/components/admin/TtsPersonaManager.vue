@@ -200,7 +200,7 @@ async function previewVoice() {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="160">
         <template #default="{ row }">
           <el-button size="small" type="primary" plain @click="syncPersona(row)">
             <el-icon><Headset /></el-icon>

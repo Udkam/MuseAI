@@ -21,6 +21,7 @@
   .tour-path-manager,
   .prompt-manager,
   .tts-persona-manager,
+  .mini-program-control,
   .llm-trace-manager
 ) {
   min-height: 100%;
@@ -162,8 +163,36 @@
 .admin-view.admin-view .el-button--primary {
   --el-button-bg-color: var(--admin-accent);
   --el-button-border-color: var(--admin-accent);
+  --el-button-text-color: #ffffff;
   --el-button-hover-bg-color: #8f3f23;
   --el-button-hover-border-color: #8f3f23;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #7b351f;
+  --el-button-active-border-color: #7b351f;
+  --el-button-active-text-color: #ffffff;
+}
+
+.admin-view.admin-view .el-button--primary.is-plain {
+  --el-button-bg-color: #ffffff;
+  --el-button-border-color: #d8b4a4;
+  --el-button-text-color: var(--admin-accent);
+  --el-button-hover-bg-color: var(--admin-accent);
+  --el-button-hover-border-color: var(--admin-accent);
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #8f3f23;
+  --el-button-active-border-color: #8f3f23;
+  --el-button-active-text-color: #ffffff;
+}
+
+.admin-view.admin-view .el-button--danger.is-plain,
+.admin-view.admin-view .el-button--warning.is-plain {
+  --el-button-bg-color: #ffffff;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-text-color: #ffffff;
+}
+
+.admin-view.admin-view :is(.el-button--primary, .el-button--danger, .el-button--warning) .el-icon {
+  color: currentColor;
 }
 
 .admin-view.admin-view .el-card {
@@ -185,6 +214,7 @@
     .tour-path-manager,
     .prompt-manager,
     .tts-persona-manager,
+    .mini-program-control,
     .llm-trace-manager
   ) {
     padding: 14px;

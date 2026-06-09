@@ -113,7 +113,7 @@ class TourHallListResponse(BaseModel):
     halls: list[TourHallItem]
 
 
-LEGACY_HALLS_DATA = [
+DEFAULT_HALLS_DATA = [
     TourHallItem(
         slug="basic-exhibition-hall",
         name="基本陈列展厅",
@@ -139,7 +139,7 @@ LEGACY_HALLS_DATA = [
 
 
 async def _load_tour_halls(session: SessionDep) -> list[TourHallItem]:
-    """Load halls from unified hall settings, falling back to legacy defaults."""
+    """Load halls from unified hall settings, falling back to canonical defaults."""
     stmt = (
         select(Hall)
         .where(Hall.is_active.is_(True))
@@ -155,7 +155,7 @@ async def _load_tour_halls(session: SessionDep) -> list[TourHallItem]:
             rows_by_slug[slug] = hall
 
     if not hall_rows and not canonical_hall_contract():
-        return LEGACY_HALLS_DATA
+        return DEFAULT_HALLS_DATA
 
     halls: list[TourHallItem] = []
     for contract in canonical_hall_contract():
@@ -289,14 +289,19 @@ def _record_point_from_answer(answer: str | None) -> str:
 
 
 def _build_report_record_notes(events=None) -> list[dict[str, str]]:
-    entries: list[dict[str, str]] = []
+    groups: dict[str, list[dict[str, str]]] = {}
     fallback_entries: list[dict[str, str]] = []
-    seen: set[str] = set()
     for event in events or []:
         event_type = getattr(event, "event_type", None)
         if event_type not in {"assistant_answer", "exhibit_question"}:
             continue
         metadata = getattr(event, "metadata", None) or {}
+        hall = normalize_hall(
+            getattr(event, "hall", None)
+            or metadata.get("hall")
+            or metadata.get("hall_slug")
+            or metadata.get("hallSlug")
+        )
         question = (
             metadata.get("question")
             or metadata.get("message")
@@ -313,29 +318,36 @@ def _build_report_record_notes(events=None) -> list[dict[str, str]]:
             "point": _record_point_from_answer(metadata.get("answer")),
         }
         if event_type == "assistant_answer" and metadata.get("answer"):
-            if compact_question not in seen:
-                seen.add(compact_question)
-                entries.append(item)
+            groups.setdefault(hall or "summary", []).append(item)
         else:
             fallback_entries.append(item)
 
-    for item in fallback_entries:
-        key = item["question"]
-        if key in seen:
+    if not groups and fallback_entries:
+        groups["summary"] = fallback_entries
+
+    notes: list[dict[str, str]] = []
+    for hall, items in groups.items():
+        unique_items: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in items:
+            key = item["question"]
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_items.append(item)
+        if not unique_items:
             continue
-        seen.add(key)
-        entries.append(item)
-
-    if len(entries) <= 4:
-        return entries
-
-    sample_questions = "；".join(item["question"].replace("围绕：", "") for item in entries[:3])
-    return [
-        {
-            "question": f"记录摘要：{len(entries)} 组问答",
-            "point": f"本段对话已合并整理，代表问题包括：{sample_questions}。可在对应展厅继续核对证据和展品细节。",
-        }
-    ]
+        sample_questions = "；".join(
+            item["question"].replace("围绕：", "") for item in unique_items[:3]
+        )
+        title = hall_display_name(hall) if hall != "summary" else "记录摘要"
+        notes.append(
+            {
+                "question": f"{title}：{len(unique_items)} 组问答",
+                "point": f"本展厅对话已合并整理，代表问题包括：{sample_questions}。后续可回到对应展厅核对可见证据和展品细节。",
+            }
+        )
+    return notes[:4]
 
 
 def _format_report(report, tour_session=None, events=None) -> dict:

@@ -1,8 +1,7 @@
 """Shared hall normalization for tour APIs.
 
-Frontend displays Chinese names, but API/session/event/report contracts should
-prefer stable backend slugs. Keep aliases here so old local storage and older
-event rows remain readable.
+Only the nine halls imported from the Banpo hall contract are accepted.
+Unknown or pre-contract hall values are dropped instead of being remapped.
 """
 
 CANONICAL_HALLS: dict[str, str] = {
@@ -113,37 +112,10 @@ HALL_CONTRACT: list[dict] = [
     },
 ]
 
-LEGACY_HALL_SLUGS: dict[str, str] = {
-    "relic-hall": "basic-exhibition-hall",
-    "pottery-spirit-hall": "basic-exhibition-hall",
-    "civilization-spark-hall": "basic-exhibition-hall",
-    "site-hall": "site-protection-hall",
-    "site-archaeology-hall": "site-protection-hall",
-    "bronze-a": "basic-exhibition-hall",
-    "bronze-b": "basic-exhibition-hall",
-    "ceramics": "kiln-hall",
-    "painting-a": "basic-exhibition-hall",
-    "painting-b": "basic-exhibition-hall",
-    "jade": "basic-exhibition-hall",
-    "gold-silver": "basic-exhibition-hall",
-    "sculpture": "banpo-girl-sculpture",
-    "special": "temporary-hall-1",
-}
-
 CANONICAL_HALL_SLUGS = set(CANONICAL_HALLS)
 
 HALL_ALIASES: dict[str, str] = {
     **{slug: slug for slug in CANONICAL_HALLS},
-    **LEGACY_HALL_SLUGS,
-    "basic": "basic-exhibition-hall",
-    "site": "site-protection-hall",
-    "temp1": "temporary-hall-1",
-    "temp2": "temporary-hall-2",
-    "banpoGirl": "banpo-girl-sculpture",
-    "workshop": "prehistoric-workshop",
-    "education": "education-center",
-    "peony": "peony-garden",
-    "kiln": "kiln-hall",
     "基本陈列展厅": "basic-exhibition-hall",
     "遗址保护大厅": "site-protection-hall",
     "临展厅一": "temporary-hall-1",
@@ -153,25 +125,17 @@ HALL_ALIASES: dict[str, str] = {
     "教研中心": "education-center",
     "牡丹园": "peony-garden",
     "陶窑展厅": "kiln-hall",
-    "relic-hall": "basic-exhibition-hall",
-    "pottery-spirit-hall": "basic-exhibition-hall",
-    "civilization-spark-hall": "basic-exhibition-hall",
-    "site-hall": "site-protection-hall",
-    "site-archaeology-hall": "site-protection-hall",
-    "出土文物陈列区": "basic-exhibition-hall",
-    "半坡聚落复原区": "site-protection-hall",
-    "专题文化展区": "basic-exhibition-hall",
 }
 
 
 def normalize_hall(value: str | None) -> str | None:
-    """Return canonical slug for known halls; preserve unknown values."""
+    """Return canonical slug for known halls; drop unknown values."""
     if value is None:
         return None
     raw = str(value).strip()
     if not raw:
         return None
-    return HALL_ALIASES.get(raw, raw)
+    return HALL_ALIASES.get(raw)
 
 
 def normalize_halls(values: list[str] | None) -> list[str]:
