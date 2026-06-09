@@ -138,7 +138,48 @@
 }
 
 .admin-view.admin-view .el-table {
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
+}
+
+.admin-view.admin-view .el-table :is(
+  .el-table__inner-wrapper,
+  .el-table__header-wrapper,
+  .el-table__body-wrapper,
+  .el-scrollbar,
+  .el-scrollbar__wrap,
+  .el-scrollbar__view
+) {
+  width: 100% !important;
+  max-width: 100%;
+  overflow-x: hidden !important;
+}
+
+.admin-view.admin-view .el-table :is(.el-table__header, .el-table__body, table) {
+  width: 100% !important;
+  table-layout: fixed;
+}
+
+.admin-view.admin-view .el-table .el-scrollbar__bar.is-horizontal {
+  display: none !important;
+}
+
+.admin-view.admin-view .el-table .cell {
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.admin-view.admin-view .el-table :is(.el-button, .el-tag) {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.admin-view.admin-view .el-table .el-button + .el-button {
+  margin-left: 0;
 }
 
 .admin-view.admin-view .el-table th.el-table__cell {

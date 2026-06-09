@@ -178,6 +178,33 @@ const flowRows = computed(() => [
   },
 ])
 
+const syncRows = [
+  {
+    area: '展品管理',
+    runtime: '小程序通过 /exhibits 和 /exhibits/:id 实时读取后端展品库',
+    effect: '保存后立即影响搜展品、展品详情、OCR fallback 和报告展项统计',
+    note: '需要绑定 canonical hall slug；未绑定展厅会被小程序筛选、报告和 OCR 逻辑漏掉。',
+  },
+  {
+    area: '展厅设置',
+    runtime: '小程序展厅选择页主要使用本地 banpo-halls.js；后端 /tour/halls 用于会话和报告契约',
+    effect: '后端展厅状态会影响接口和报告；展厅名称/顺序的前端静态改动仍需发布小程序代码',
+    note: '管理端应维护与小程序完全一致的 9 个 canonical slug，不再保留旧 slug。',
+  },
+  {
+    area: '提示词与 TTS',
+    runtime: 'AI 回答、报告和 TTS 播报由后端接口读取提示词缓存和 TTS persona',
+    effect: '保存后需重载缓存；TTS 角色同步后四身份共用冰糖声线',
+    note: '提示词不会自动改小程序页面文案，但会影响后端生成内容和播报风格。',
+  },
+  {
+    area: '路线管理',
+    runtime: '小程序 route 页先展示本地 9 站 fallback，再调用 /curator/plan-tour',
+    effect: 'AI plan 由后端服务实时返回；本地 fallback 路线要改需发布小程序代码',
+    note: '管理端路线页现在展示的是小程序 fallback 契约，用于校验，不是直接写入小程序代码。',
+  },
+]
+
 const quickActions = [
   { title: '维护展厅顺序', desc: '同步小程序选择页、路线页和报告统计使用的 canonical slug。', icon: MapLocation, path: '/admin/halls' },
   { title: '维护展品与 OCR 匹配', desc: '展品名称、分类、展厅归属会直接影响搜展品和拍照识别结果。', icon: Search, path: '/admin/exhibits' },
@@ -314,6 +341,21 @@ onMounted(fetchDashboard)
             </div>
           </template>
         </el-table-column>
+      </el-table>
+    </section>
+
+    <section class="panel-section">
+      <div class="section-title">
+        <div>
+          <h2>管理同步边界</h2>
+          <p>这里区分“保存后立即影响小程序”和“需要发布小程序代码”的配置。</p>
+        </div>
+      </div>
+      <el-table :data="syncRows" border class="flow-table">
+        <el-table-column prop="area" label="管理内容" min-width="150" />
+        <el-table-column prop="runtime" label="小程序读取方式" min-width="240" />
+        <el-table-column prop="effect" label="生效方式" min-width="220" />
+        <el-table-column prop="note" label="说明" min-width="260" />
       </el-table>
     </section>
 

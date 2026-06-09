@@ -82,6 +82,8 @@ const filteredExhibits = computed(() => {
 const nonExhibitRows = computed(() => activeNormalizedExhibits.value.filter((item) => isNonExhibitName(item.name)))
 const unmappedRows = computed(() => activeNormalizedExhibits.value.filter((item) => !activeHallSlugs.value.has(item.hall)))
 const problemRows = computed(() => [...nonExhibitRows.value, ...unmappedRows.value])
+const selectedUnmappedRows = computed(() => selectedRows.value.filter((item) => !activeHallSlugs.value.has(item.hall)))
+const rowsToBatchBind = computed(() => selectedUnmappedRows.value.length ? selectedUnmappedRows.value : unmappedRows.value)
 
 const stats = computed(() => [
   { label: '展项总数', value: normalizedExhibits.value.length, hint: '后台展品库' },
@@ -235,8 +237,17 @@ function handleSelectionChange(selection) {
 
 async function handleResolveProblemRows() {
   const rowsToDisable = nonExhibitRows.value
+  const rowsToBind = rowsToBatchBind.value
+  if (!rowsToDisable.length && rowsToBind.length) {
+    if (!batchHall.value) {
+      ElMessage.warning('请先在工具栏选择目标展厅，再处理未绑定展厅的异常项')
+      return
+    }
+    await handleBatchBindHall()
+    return
+  }
   if (!rowsToDisable.length) {
-    ElMessage.warning('未绑定展厅的展项需要选择行后批量绑定展厅，或逐条编辑所属展厅')
+    ElMessage.warning('当前没有可自动处理的异常项')
     return
   }
 
@@ -269,17 +280,25 @@ async function handleResolveProblemRows() {
 }
 
 async function handleBatchBindHall() {
-  if (!selectedRows.value.length || !batchHall.value) return
+  const targetRows = rowsToBatchBind.value
+  if (!targetRows.length) {
+    ElMessage.warning('当前没有未绑定展厅的展项需要批量绑定')
+    return
+  }
+  if (!batchHall.value) {
+    ElMessage.warning('请先选择目标展厅')
+    return
+  }
   try {
     await ElMessageBox.confirm(
-      `确定将已选中的 ${selectedRows.value.length} 件展项绑定到「${getHallDisplayName(batchHall.value)}」吗？`,
+      `确定将 ${targetRows.length} 件未绑定展厅的展项绑定到「${getHallDisplayName(batchHall.value)}」吗？已正常绑定的展项不会被覆盖。`,
       '批量绑定展厅',
       { type: 'warning' },
     )
     batchBinding.value = true
     let successCount = 0
     let failedCount = 0
-    for (const row of selectedRows.value) {
+    for (const row of targetRows) {
       const result = await updateExhibit(row.id, { hall: batchHall.value })
       if (result.ok) successCount += 1
       else failedCount += 1
@@ -399,17 +418,17 @@ async function handleBatchDelete() {
         <el-option label="停用展项" value="inactive" />
         <el-option label="全部状态" value="all" />
       </el-select>
-      <el-select v-model="batchHall" placeholder="批量绑定展厅" clearable filterable>
+      <el-select v-model="batchHall" placeholder="选择异常项目标展厅" clearable filterable>
         <el-option v-for="hall in canonicalHalls" :key="hall.slug" :label="hall.name" :value="hall.slug" />
       </el-select>
       <el-button
         type="primary"
         plain
         :loading="batchBinding"
-        :disabled="batchBinding || !selectedRows.length || !batchHall"
+        :disabled="batchBinding || !rowsToBatchBind.length || !batchHall"
         @click="handleBatchBindHall"
       >
-        绑定所选
+        绑定异常项 ({{ rowsToBatchBind.length }})
       </el-button>
       <el-button
         type="danger"
@@ -428,10 +447,11 @@ async function handleBatchDelete() {
       row-key="id"
       v-loading="loading"
       class="exhibit-table"
+      table-layout="fixed"
       @selection-change="handleSelectionChange"
     >
-      <el-table-column type="selection" width="48" reserve-selection />
-      <el-table-column label="展项" min-width="300">
+      <el-table-column type="selection" width="44" reserve-selection />
+      <el-table-column label="展项" min-width="240">
         <template #default="{ row }">
           <div class="exhibit-cell">
             <span class="exhibit-icon">🏺</span>
@@ -447,7 +467,7 @@ async function handleBatchDelete() {
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="所属展厅" min-width="170">
+      <el-table-column label="所属展厅" width="150">
         <template #default="{ row }">
           <div class="hall-cell">
             <strong>{{ row.hallName }}</strong>
@@ -455,24 +475,26 @@ async function handleBatchDelete() {
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="分类" min-width="150">
+      <el-table-column label="分类" width="118">
         <template #default="{ row }">
           <el-tag effect="plain">{{ row.categoryLabel }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="era" label="年代" min-width="170" />
-      <el-table-column label="重要度" width="130">
+      <el-table-column prop="era" label="年代" width="136" class-name="wrap-cell" />
+      <el-table-column label="重要度" width="104">
         <template #default="{ row }">
           <el-rate :model-value="row.importance || 3" disabled />
         </template>
       </el-table-column>
-      <el-table-column label="参观" width="90">
+      <el-table-column label="参观" width="68">
         <template #default="{ row }">{{ row.estimated_visit_time || 0 }} 分</template>
       </el-table-column>
-      <el-table-column label="操作" width="170">
+      <el-table-column label="操作" width="112">
         <template #default="{ row }">
-          <el-button size="small" @click="handleEdit(row)">编辑</el-button>
-          <el-button type="danger" size="small" plain @click="handleDelete(row)">删除</el-button>
+          <div class="row-actions">
+            <el-button size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" size="small" plain @click="handleDelete(row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -634,24 +656,54 @@ async function handleBatchDelete() {
 }
 
 .exhibit-table {
+  width: 100%;
   border-radius: 12px;
   overflow: hidden;
 }
 
+.exhibit-table :deep(.el-table__inner-wrapper),
+.exhibit-table :deep(.el-scrollbar__wrap),
+.exhibit-table :deep(.el-scrollbar__view),
+.exhibit-table :deep(table) {
+  width: 100% !important;
+}
+
+.exhibit-table :deep(.el-scrollbar__bar.is-horizontal) {
+  display: none;
+}
+
+.exhibit-table :deep(.cell) {
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.exhibit-table :deep(.el-rate__item) {
+  margin-right: 1px;
+}
+
+.exhibit-table :deep(.el-rate__icon) {
+  margin-right: 1px;
+  font-size: 15px;
+}
+
 .exhibit-cell {
   display: flex;
-  gap: 12px;
+  min-width: 0;
+  gap: 10px;
   align-items: flex-start;
 }
 
 .exhibit-icon {
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   background: #f1e4d4;
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .exhibit-name {
@@ -685,6 +737,17 @@ async function handleBatchDelete() {
 .hall-cell span {
   color: #9a8575;
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.row-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 @media (max-width: 1180px) {
