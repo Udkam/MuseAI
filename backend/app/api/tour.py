@@ -344,7 +344,7 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
             },
         )
         if event_type == "assistant_answer" and metadata.get("answer"):
-            entry["answer"] = _compact_record_text(metadata.get("answer"), 180)
+            entry["answer"] = _compact_record_text(metadata.get("answer"), 420)
 
     entries = list(entries_by_question.values())
     if not entries:
@@ -364,7 +364,7 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
     if questions_text:
         point += f"你提出的问题包括“{questions_text}”，这些问题已经不只是记录到访，而是在尝试把现场材料转化为判断线索。"
     if answer_text:
-        point += f"从回答内容看，最值得保留的复盘线索是：{_compact_record_text(answer_text, 220)}。"
+        point += f"从回答内容看，最值得保留的复盘线索是：{_compact_record_text(answer_text, 520)}。"
     point += frame
     return [{"question": "游览记录摘要", "point": point}]
 
