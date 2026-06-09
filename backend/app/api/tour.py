@@ -302,10 +302,10 @@ def _infer_record_topic(text: str) -> str:
 
 def _persona_record_frame(persona: str | None) -> tuple[str, str]:
     frames = {
-        "A": ("考古研究员", "这段记录更像一份考古观察：它把问题压回到可核对的遗迹、材料和推断边界上。"),
-        "B": ("研学记录员", "这段记录更像一份研学笔记：它把展厅见闻整理成后续还能复盘的学习线索。"),
-        "C": ("历史追问者", "这段记录更像一次历史追问：它把展厅内容和半坡社会、共同生活的问题连接起来。"),
-        "D": ("器物研究员", "这段记录更像一份器物观察：它从材料、器形、用途和工艺痕迹进入半坡生活。"),
+        "A": ("考古研究员", "这段记录更像一份考古观察：它把问题压回到可核对的遗迹、材料和推断边界上，也提醒后续回到展厅时继续区分直接证据与合理解释。"),
+        "B": ("研学记录员", "这段记录更像一份研学笔记：它把展厅见闻整理成后续还能复盘的学习线索，也帮助你把“看过什么”转成“为什么这样判断”。"),
+        "C": ("历史追问者", "这段记录更像一次历史追问：它把展厅内容和半坡社会、共同生活的问题连接起来，也保留了继续追问制度、分工和日常秩序的入口。"),
+        "D": ("器物研究员", "这段记录更像一份器物观察：它从材料、器形、用途和工艺痕迹进入半坡生活，也把器物细节和生产、使用场景联系起来。"),
     }
     return frames.get(persona or "A", frames["A"])
 
@@ -344,7 +344,7 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
             },
         )
         if event_type == "assistant_answer" and metadata.get("answer"):
-            entry["answer"] = _record_point_from_answer(metadata.get("answer"))
+            entry["answer"] = _compact_record_text(metadata.get("answer"), 180)
 
     entries = list(entries_by_question.values())
     if not entries:
@@ -364,7 +364,7 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
     if questions_text:
         point += f"你提出的问题包括“{questions_text}”，这些问题已经不只是记录到访，而是在尝试把现场材料转化为判断线索。"
     if answer_text:
-        point += f"从回答内容看，最值得保留的复盘线索是：{_compact_record_text(answer_text, 120)}。"
+        point += f"从回答内容看，最值得保留的复盘线索是：{_compact_record_text(answer_text, 220)}。"
     point += frame
     return [{"question": "游览记录摘要", "point": point}]
 
