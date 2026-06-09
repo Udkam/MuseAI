@@ -1,12 +1,14 @@
 <script setup>
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { useTour } from '../../../composables/useTour.js'
 import { useTourWorkbench } from '../../../composables/useTourWorkbench.js'
+import { getHallDisplayName } from '../../../constants/banpo.js'
 
-const { chatMessages, streamingContent, loading, sendTourMessage, currentExhibit, suggestedActions } = useTour()
+const { chatMessages, streamingContent, loading, sendTourMessage, currentHall, currentExhibit, suggestedActions, leaveHall } = useTour()
 const { chatDraft, getStylePayload, uiPreferences, activeTab } = useTourWorkbench()
 
 const messagesArea = ref(null)
+const currentHallName = computed(() => currentHall.value ? getHallDisplayName(currentHall.value) : '')
 
 function scrollToBottom() {
   if (!uiPreferences.value.autoScroll) return
@@ -32,11 +34,19 @@ async function sendMessage() {
   await sendTourMessage(rawInput, true, getStylePayload())
 }
 
+async function handleLeaveHall() {
+  await leaveHall()
+}
+
 onMounted(scrollToBottom)
 </script>
 
 <template>
   <div class="tour-session-panel">
+    <div v-if="currentHall" class="session-hall-bar">
+      <span class="hall-name">{{ currentHallName }}</span>
+      <el-button size="small" plain @click="handleLeaveHall">离开展厅</el-button>
+    </div>
     <div v-if="currentExhibit" class="session-exhibit-bar">
       <span class="exhibit-name">{{ currentExhibit.name }}</span>
     </div>
@@ -69,6 +79,22 @@ onMounted(scrollToBottom)
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.session-hall-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.hall-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .session-exhibit-bar {

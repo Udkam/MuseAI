@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { api } from '../api/index.js'
-import { BANPO_PERSONA_BY_CODE, mergeHallsWithContract } from '../constants/banpo.js'
+import { BANPO_PERSONA_BY_CODE, getHallDisplayName, mergeHallsWithContract } from '../constants/banpo.js'
 import { useAuth } from './useAuth.js'
 import { useTourWorkbench } from './useTourWorkbench.js'
 import { useTTSPlayer } from './useTTSPlayer.js'
@@ -29,6 +29,11 @@ const EVENT_FLUSH_INTERVAL = 30000
 const STORAGE_KEY_SESSION = 'tour_session_id'
 const STORAGE_KEY_TOKEN = 'tour_session_token'
 const STORAGE_KEY_EVENTS = 'tour_pending_events'
+
+function buildHallWelcome(hallSlug) {
+  const hallName = getHallDisplayName(hallSlug)
+  return `欢迎来到${hallName}。你可以先告诉我想观察什么，也可以打开展品速览，围绕具体展品继续提问。`
+}
 
 function _getToken() {
   return sessionToken.value || null
@@ -132,6 +137,12 @@ export function useTour() {
 
   async function selectHall(hallSlug) {
     currentHall.value = hallSlug
+    currentExhibit.value = null
+    hallExhibits.value = []
+    exhibitIndex.value = 0
+    streamingContent.value = ''
+    suggestedActions.value = null
+    chatMessages.value = [{ role: 'assistant', content: buildHallWelcome(hallSlug), isWelcome: true }]
     const token = _getToken()
     await api.tour.updateSession(
       tourSession.value.id,
@@ -147,6 +158,7 @@ export function useTour() {
     if (exhibitsResult.ok) {
       hallExhibits.value = exhibitsResult.data.exhibits || []
     }
+    bufferEvent('hall_enter', { hall: hallSlug })
   }
 
   async function enterExhibit(exhibit) {
@@ -175,10 +187,13 @@ export function useTour() {
 
   async function sendTourMessage(message, skipUserPush = false, style = null) {
     if (!tourSession.value) return
+    const rawMessage = String(message || '').trim()
+    if (!rawMessage) return
     loading.value.chat = true
     if (!skipUserPush) {
-      chatMessages.value.push({ role: 'user', content: message })
+      chatMessages.value.push({ role: 'user', content: rawMessage })
     }
+    bufferEvent('exhibit_question', { message: rawMessage, question: rawMessage })
     streamingContent.value = ''
     suggestedActions.value = null
 
@@ -186,7 +201,7 @@ export function useTour() {
     try {
       for await (const event of api.tour.chatStream(
         tourSession.value.id,
-        message,
+        rawMessage,
         token,
         currentExhibit.value?.id,
         style,
@@ -197,7 +212,13 @@ export function useTour() {
         if (event.event === 'chunk' && event.data?.content) {
           streamingContent.value += event.data.content
         } else if (event.event === 'done') {
-          chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
+          const answer = streamingContent.value
+          chatMessages.value.push({ role: 'assistant', content: answer })
+          bufferEvent('assistant_answer', {
+            question: rawMessage,
+            answer,
+            trace_id: event.data?.trace_id,
+          })
           streamingContent.value = ''
           if (event.is_ceramic_question !== undefined || event.suggested_actions) {
             suggestedActions.value = event.suggested_actions || {}
@@ -264,6 +285,38 @@ export function useTour() {
         hallExhibits.value = []
       }
     }
+    return result
+  }
+
+  async function leaveHall() {
+    if (!tourSession.value) return null
+    if (currentHall.value) {
+      bufferEvent('hall_leave', { hall: currentHall.value })
+    }
+    await flushEvents()
+
+    const token = _getToken()
+    const result = await api.tour.updateSession(
+      tourSession.value.id,
+      {
+        current_hall: null,
+        current_exhibit_id: null,
+        status: 'touring',
+      },
+      token,
+    )
+    if (result.ok) {
+      tourSession.value = result.data
+    }
+    tourStep.value = 'hall-select'
+    currentHall.value = null
+    currentExhibit.value = null
+    hallExhibits.value = []
+    exhibitIndex.value = 0
+    streamingContent.value = ''
+    suggestedActions.value = null
+    chatMessages.value = []
+    stopTTS()
     return result
   }
 
@@ -347,6 +400,7 @@ export function useTour() {
     bufferEvent,
     flushEvents,
     completeHall,
+    leaveHall,
     generateReport,
     resetTour,
     setupBeforeUnload,

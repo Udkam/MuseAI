@@ -24,6 +24,12 @@ router = APIRouter(prefix="/admin/tts", tags=["admin-tts"])
 
 VALID_PERSONAS = {"a", "b", "c", "d"}
 PERSONA_KEY_PREFIX = "tour_tts_persona_"
+PERSONA_DEFAULTS = {
+    "a": {"name": "Tour TTS Persona A", "description": "Archaeology researcher voice persona"},
+    "b": {"name": "Tour TTS Persona B", "description": "Study recorder voice persona"},
+    "c": {"name": "Tour TTS Persona C", "description": "Historical questioner voice persona"},
+    "d": {"name": "Tour TTS Persona D", "description": "Artifact researcher voice persona"},
+}
 
 
 class TtsPersonaResponse(BaseModel):
@@ -97,12 +103,20 @@ def _persona_to_response(prompt: Prompt) -> TtsPersonaResponse:
 
 
 def _validate_persona(persona: str) -> str:
+    persona = persona.lower()
     if persona not in VALID_PERSONAS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid persona: {persona}. Must be one of: a, b, c, d",
         )
     return f"{PERSONA_KEY_PREFIX}{persona}"
+
+
+def _build_tts_variables(base_variables: list | None, voice_description: str | None) -> list[dict[str, str]]:
+    new_variables = store_voice_description(base_variables or [], voice_description or "")
+    new_variables = [v for v in new_variables if v.get("name") != VOICE_KEY]
+    new_variables.append({"name": VOICE_KEY, "description": DEFAULT_TTS_VOICE})
+    return new_variables
 
 
 @router.get("/personas", response_model=TtsPersonaListResponse, summary="List TTS personas")
@@ -148,31 +162,32 @@ async def update_tts_persona(
 
     existing = await repository.get_by_key(key)
     if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"TTS persona not found: {persona}",
-        )
-
-    new_variables = store_voice_description(
-        existing.variables, request.voice_description or ""
-    )
-
-    new_variables = [v for v in new_variables if v.get("name") != VOICE_KEY]
-    new_variables.append({"name": VOICE_KEY, "description": DEFAULT_TTS_VOICE})
-
-    try:
-        prompt = await repository.update_with_variables(
+        persona_code = persona.lower()
+        defaults = PERSONA_DEFAULTS[persona_code]
+        prompt = await repository.create(
             key=key,
+            name=defaults["name"],
+            category="tts",
             content=request.content,
-            variables=new_variables,
-            changed_by=current_user.get("email"),
-            change_reason=request.change_reason,
+            description=defaults["description"],
+            variables=_build_tts_variables([], request.voice_description),
         )
-    except PromptNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"TTS persona not found: {persona}",
-        ) from None
+    else:
+        new_variables = _build_tts_variables(existing.variables, request.voice_description)
+
+        try:
+            prompt = await repository.update_with_variables(
+                key=key,
+                content=request.content,
+                variables=new_variables,
+                changed_by=current_user.get("email"),
+                change_reason=request.change_reason,
+            )
+        except PromptNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"TTS persona not found: {persona}",
+            ) from None
 
     await prompt_cache.refresh(prompt)
     return _persona_to_response(prompt)

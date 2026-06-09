@@ -20,6 +20,7 @@ const exhibits = ref([])
 const halls = ref([])
 const selectedRows = ref([])
 const batchDeleting = ref(false)
+const problemResolving = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 
@@ -58,6 +59,7 @@ const canonicalHalls = computed(() => halls.value.filter((hall) => hall.is_activ
 const activeHallSlugs = computed(() => new Set(canonicalHalls.value.map((hall) => hall.slug)))
 
 const normalizedExhibits = computed(() => exhibits.value.map(normalizeExhibit))
+const activeNormalizedExhibits = computed(() => normalizedExhibits.value.filter((item) => item.is_active !== false))
 
 const filteredExhibits = computed(() => {
   const q = filters.keyword.trim().toLowerCase()
@@ -75,14 +77,15 @@ const filteredExhibits = computed(() => {
   })
 })
 
-const nonExhibitRows = computed(() => normalizedExhibits.value.filter((item) => isNonExhibitName(item.name)))
-const unmappedRows = computed(() => normalizedExhibits.value.filter((item) => !activeHallSlugs.value.has(item.hall)))
+const nonExhibitRows = computed(() => activeNormalizedExhibits.value.filter((item) => isNonExhibitName(item.name)))
+const unmappedRows = computed(() => activeNormalizedExhibits.value.filter((item) => !activeHallSlugs.value.has(item.hall)))
+const legacyHallRows = computed(() => activeNormalizedExhibits.value.filter((item) => item.rawHall && item.rawHall !== item.hall && activeHallSlugs.value.has(item.hall)))
 
 const stats = computed(() => [
   { label: '展项总数', value: normalizedExhibits.value.length, hint: '后台展品库' },
   { label: '可展示', value: normalizedExhibits.value.filter((item) => item.is_active !== false).length, hint: '小程序可检索' },
   { label: '展厅覆盖', value: `${coveredHallCount.value}/${BANPO_HALLS.length}`, hint: 'canonical slug' },
-  { label: '需处理', value: nonExhibitRows.value.length + unmappedRows.value.length, hint: '非展品或映射异常' },
+  { label: '需处理', value: nonExhibitRows.value.length + unmappedRows.value.length + legacyHallRows.value.length, hint: '非展品或映射异常' },
 ])
 
 const coveredHallCount = computed(() => {
@@ -99,6 +102,7 @@ function normalizeExhibit(item) {
   const hall = normalizeHallSlug(rawHall)
   return {
     ...item,
+    rawHall,
     hall,
     hallName: getHallDisplayName(hall),
     categoryLabel: getCategoryLabel(item.category),
@@ -125,7 +129,7 @@ async function fetchExhibits() {
 }
 
 function isNonExhibitName(name = '') {
-  const exactNames = new Set(['半坡人'])
+  const exactNames = new Set(['半坡人', '生态环境', '临展厅一当期主题', '临展厅二当期主题'])
   return exactNames.has(String(name).trim())
 }
 
@@ -227,6 +231,45 @@ function handleSelectionChange(selection) {
   selectedRows.value = selection
 }
 
+async function handleResolveProblemRows() {
+  const rowsToDisable = nonExhibitRows.value
+  const rowsToNormalize = legacyHallRows.value
+  if (!rowsToDisable.length && !rowsToNormalize.length) return
+
+  try {
+    await ElMessageBox.confirm(
+      `将停用 ${rowsToDisable.length} 条非展品，并修正 ${rowsToNormalize.length} 条旧展厅映射。是否继续？`,
+      '处理需处理项',
+      { type: 'warning' },
+    )
+    problemResolving.value = true
+    let successCount = 0
+    let failedCount = 0
+
+    for (const row of rowsToDisable) {
+      const result = await updateExhibit(row.id, { is_active: false })
+      if (result.ok) successCount += 1
+      else failedCount += 1
+    }
+    for (const row of rowsToNormalize) {
+      const result = await updateExhibit(row.id, { hall: row.hall })
+      if (result.ok) successCount += 1
+      else failedCount += 1
+    }
+
+    await fetchExhibits()
+    if (failedCount) {
+      ElMessage.warning(`已处理 ${successCount} 条，${failedCount} 条失败`)
+    } else {
+      ElMessage.success(`已处理 ${successCount} 条异常项`)
+    }
+  } catch {
+    // user cancelled
+  } finally {
+    problemResolving.value = false
+  }
+}
+
 async function handleBatchDelete() {
   if (!selectedRows.value.length) return
   try {
@@ -268,6 +311,15 @@ async function handleBatchDelete() {
       </div>
       <div class="hero-actions">
         <el-button @click="fetchExhibits">刷新</el-button>
+        <el-button
+          type="warning"
+          plain
+          :loading="problemResolving"
+          :disabled="problemResolving || (!nonExhibitRows.length && !legacyHallRows.length)"
+          @click="handleResolveProblemRows"
+        >
+          处理需处理项
+        </el-button>
         <el-button type="primary" @click="handleAdd">添加展品</el-button>
       </div>
     </header>

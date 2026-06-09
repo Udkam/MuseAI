@@ -358,9 +358,6 @@ async def generate_report(
     result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
 
-    if existing is not None:
-        return existing.to_entity()
-
     tour_session = await get_session(session, tour_session_id)
     events = await get_events_by_session(session, tour_session_id)
 
@@ -369,13 +366,30 @@ async def generate_report(
     identity_tags = select_identity_tags(radar_scores)
     report_theme = get_report_theme(tour_session.persona)
 
-    one_liner = _pick_one_liner(stats, tour_session.persona)
+    one_liner = existing.one_liner if existing is not None else _pick_one_liner(stats, tour_session.persona)
 
-    if llm_provider:
+    if existing is None and llm_provider:
         try:
             one_liner = await _generate_one_liner_llm(llm_provider, tour_session.persona, stats)
         except Exception as e:
             logger.warning(f"Failed to generate one-liner via LLM, using fallback: {e}")
+
+    if existing is not None:
+        existing.total_duration_minutes = stats["total_duration_minutes"]
+        existing.most_viewed_exhibit_id = stats["most_viewed_exhibit_id"]
+        existing.most_viewed_exhibit_duration = stats["most_viewed_exhibit_duration"]
+        existing.longest_hall = stats["longest_hall"]
+        existing.longest_hall_duration = stats["longest_hall_duration"]
+        existing.total_questions = stats["total_questions"]
+        existing.total_exhibits_viewed = stats["total_exhibits_viewed"]
+        existing.ceramic_questions = stats["ceramic_questions"]
+        existing.identity_tags = identity_tags
+        existing.radar_scores = radar_scores
+        existing.one_liner = one_liner
+        existing.report_theme = report_theme
+        await session.commit()
+        await session.refresh(existing)
+        return existing.to_entity()
 
     report_id = str(uuid.uuid4())
     model = TourReportModel(

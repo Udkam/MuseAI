@@ -16,7 +16,12 @@ from app.api.deps import (
 )
 from app.application.tour_chat_service import ask_stream_tour
 from app.application.tour_event_service import get_events_by_session, record_events
-from app.application.hall_normalizer import normalize_hall, normalize_halls
+from app.application.hall_normalizer import (
+    canonical_hall_contract,
+    hall_display_name,
+    normalize_hall,
+    normalize_halls,
+)
 from app.application.tour_report_service import build_reflection_summary, generate_report, get_report
 from app.application.tour_session_service import (
     create_session,
@@ -38,8 +43,6 @@ router = APIRouter(prefix="/tour", tags=["tour"])
 TourPersonaCode = Literal["A", "B", "C", "D"]
 TourAssumptionCode = Literal["A", "B", "C", "D"]
 VISITED_HALL_EVENT_TYPES = {
-    "hall_enter",
-    "hall_leave",
     "exhibit_question",
     "assistant_answer",
     "exhibit_view",
@@ -145,19 +148,35 @@ async def _load_tour_halls(session: SessionDep) -> list[TourHallItem]:
     result = await session.execute(stmt)
     hall_rows = list(result.scalars().all())
 
-    if not hall_rows:
+    rows_by_slug = {}
+    for hall in hall_rows:
+        slug = normalize_hall(hall.slug)
+        if slug and slug not in rows_by_slug:
+            rows_by_slug[slug] = hall
+
+    if not hall_rows and not canonical_hall_contract():
         return LEGACY_HALLS_DATA
 
-    return [
-        TourHallItem(
-            slug=hall.slug,
-            name=hall.name,
-            description=hall.description or "",
-            exhibit_count=0,
-            estimated_duration_minutes=hall.estimated_duration_minutes,
+    halls: list[TourHallItem] = []
+    for contract in canonical_hall_contract():
+        slug = contract["slug"]
+        backend = rows_by_slug.get(slug)
+        if backend is not None and backend.is_active is False:
+            continue
+        halls.append(
+            TourHallItem(
+                slug=slug,
+                name=hall_display_name(slug),
+                description=(backend.description if backend else None) or contract.get("description") or "",
+                exhibit_count=0,
+                estimated_duration_minutes=(
+                    backend.estimated_duration_minutes
+                    if backend is not None
+                    else contract["estimated_duration_minutes"]
+                ),
+            )
         )
-        for hall in hall_rows
-    ]
+    return halls
 
 
 async def _verify_ownership(
@@ -218,8 +237,6 @@ def _format_session(tour_session) -> dict:
 
 def _collect_visited_halls(tour_session=None, events=None) -> list[str]:
     candidates: list[str] = []
-    if tour_session is not None:
-        candidates.extend(tour_session.visited_halls or [])
     for event in events or []:
         event_type = getattr(event, "event_type", None)
         if event_type not in VISITED_HALL_EVENT_TYPES:
@@ -231,10 +248,6 @@ def _collect_visited_halls(tour_session=None, events=None) -> list[str]:
         for key in ("hall", "hall_slug", "hallSlug"):
             if metadata.get(key):
                 candidates.append(metadata[key])
-    if candidates:
-        return normalize_halls(candidates)
-    if tour_session is not None and tour_session.current_hall:
-        candidates.append(tour_session.current_hall)
     return normalize_halls(candidates)
 
 
@@ -276,7 +289,8 @@ def _record_point_from_answer(answer: str | None) -> str:
 
 
 def _build_report_record_notes(events=None) -> list[dict[str, str]]:
-    notes: list[dict[str, str]] = []
+    entries: list[dict[str, str]] = []
+    fallback_entries: list[dict[str, str]] = []
     seen: set[str] = set()
     for event in events or []:
         event_type = getattr(event, "event_type", None)
@@ -292,18 +306,36 @@ def _build_report_record_notes(events=None) -> list[dict[str, str]]:
         if not question:
             continue
         compact_question = _compact_record_text(question, 54)
-        if not compact_question or compact_question in seen:
+        if not compact_question:
             continue
-        seen.add(compact_question)
-        notes.append(
-            {
-                "question": f"围绕：{compact_question}",
-                "point": _record_point_from_answer(metadata.get("answer")),
-            }
-        )
-        if len(notes) >= 4:
-            break
-    return notes
+        item = {
+            "question": f"围绕：{compact_question}",
+            "point": _record_point_from_answer(metadata.get("answer")),
+        }
+        if event_type == "assistant_answer" and metadata.get("answer"):
+            if compact_question not in seen:
+                seen.add(compact_question)
+                entries.append(item)
+        else:
+            fallback_entries.append(item)
+
+    for item in fallback_entries:
+        key = item["question"]
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(item)
+
+    if len(entries) <= 4:
+        return entries
+
+    sample_questions = "；".join(item["question"].replace("围绕：", "") for item in entries[:3])
+    return [
+        {
+            "question": f"记录摘要：{len(entries)} 组问答",
+            "point": f"本段对话已合并整理，代表问题包括：{sample_questions}。可在对应展厅继续核对证据和展品细节。",
+        }
+    ]
 
 
 def _format_report(report, tour_session=None, events=None) -> dict:
@@ -431,8 +463,9 @@ async def patch_tour_session(
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise HTTPException(status_code=422, detail="Invalid JSON body") from None
     body = TourSessionUpdate.model_validate(data)
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    if "current_hall" in updates:
+    body_data = body.model_dump()
+    updates = {k: body_data[k] for k in body.model_fields_set}
+    if "current_hall" in updates and updates["current_hall"] is not None:
         updates["current_hall"] = normalize_hall(updates["current_hall"])
     try:
         tour_session = await update_session(session, session_id, **updates)
@@ -652,16 +685,24 @@ async def list_tour_halls(
         .group_by(Exhibit.hall)
     )
     result = await session.execute(stmt)
-    counts = dict(result.all())
+    counts = {}
+    for hall, count in result.all():
+        slug = normalize_hall(hall) or hall
+        counts[slug] = counts.get(slug, 0) + count
 
     halls = []
+    seen = set()
     for h in hall_configs:
+        slug = normalize_hall(h.slug) or h.slug
+        if slug in seen:
+            continue
+        seen.add(slug)
         halls.append(
             TourHallItem(
-                slug=normalize_hall(h.slug) or h.slug,
-                name=h.name,
+                slug=slug,
+                name=hall_display_name(slug),
                 description=h.description,
-                exhibit_count=counts.get(h.slug, 0),
+                exhibit_count=counts.get(slug, 0),
                 estimated_duration_minutes=h.estimated_duration_minutes,
             )
         )

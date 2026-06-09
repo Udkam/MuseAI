@@ -39,8 +39,8 @@ const expectedHalls = BANPO_HALLS.map((hall) => ({
 
 const personaContract = Object.values(BANPO_PERSONAS).map((persona) => ({
   code: persona.code,
-  personaId: persona.id,
-  label: persona.title,
+  personaId: persona.personaId,
+  label: persona.name,
   report: persona.reportTitle,
   route: persona.routeTitle,
 }))

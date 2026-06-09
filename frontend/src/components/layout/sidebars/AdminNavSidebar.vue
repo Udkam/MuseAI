@@ -38,35 +38,62 @@ const adminItems = [
   flex-direction: column;
   height: 100%;
   padding: 0;
-  background: linear-gradient(180deg, rgba(250, 245, 237, 0.92), rgba(255, 252, 247, 0.98));
+  background: #ffffff;
 }
 
 .sidebar-header {
-  padding: var(--space-5) var(--space-4);
-  border-bottom: 1px solid rgba(77, 51, 31, 0.08);
+  padding: 22px 18px 18px;
+  border-bottom: 1px solid #dfe6e2;
+  background: #f8faf9;
 }
 
 .sidebar-header p {
   margin: 0 0 4px;
-  color: var(--color-accent);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-semibold);
+  color: #a94c2c;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .sidebar-header h3 {
   margin: 0;
-  font-size: var(--font-size-h4);
-  color: var(--color-text-primary);
+  font-size: 20px;
+  line-height: 1.25;
+  color: #202725;
+  letter-spacing: 0;
 }
 
 .admin-menu {
   flex: 1;
   border-right: 0;
   background: transparent;
+  padding: 10px 8px 16px;
+  overflow-y: auto;
 }
 
 .admin-menu :deep(.el-menu-item) {
-  margin: 4px 10px;
-  border-radius: 8px;
+  height: 42px;
+  margin: 3px 0;
+  border-radius: 6px;
+  color: #46514e;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.admin-menu :deep(.el-menu-item .el-icon) {
+  color: #6f7e78;
+}
+
+.admin-menu :deep(.el-menu-item:hover) {
+  background: #edf5f1;
+  color: #202725;
+}
+
+.admin-menu :deep(.el-menu-item.is-active) {
+  background: #496f60;
+  color: #ffffff;
+}
+
+.admin-menu :deep(.el-menu-item.is-active .el-icon) {
+  color: #ffffff;
 }
 </style>

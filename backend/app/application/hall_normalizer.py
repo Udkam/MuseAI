@@ -17,8 +17,124 @@ CANONICAL_HALLS: dict[str, str] = {
     "kiln-hall": "陶窑展厅",
 }
 
+CANONICAL_HALL_ORDER = [
+    "basic-exhibition-hall",
+    "site-protection-hall",
+    "kiln-hall",
+    "prehistoric-workshop",
+    "banpo-girl-sculpture",
+    "education-center",
+    "peony-garden",
+    "temporary-hall-1",
+    "temporary-hall-2",
+]
+
+HALL_CONTRACT: list[dict] = [
+    {
+        "slug": "basic-exhibition-hall",
+        "name": CANONICAL_HALLS["basic-exhibition-hall"],
+        "description": None,
+        "floor": 1,
+        "estimated_duration_minutes": 25,
+        "display_order": 10,
+        "is_active": True,
+    },
+    {
+        "slug": "site-protection-hall",
+        "name": CANONICAL_HALLS["site-protection-hall"],
+        "description": None,
+        "floor": 1,
+        "estimated_duration_minutes": 25,
+        "display_order": 20,
+        "is_active": True,
+    },
+    {
+        "slug": "kiln-hall",
+        "name": CANONICAL_HALLS["kiln-hall"],
+        "description": None,
+        "floor": 1,
+        "estimated_duration_minutes": 18,
+        "display_order": 30,
+        "is_active": True,
+    },
+    {
+        "slug": "prehistoric-workshop",
+        "name": CANONICAL_HALLS["prehistoric-workshop"],
+        "description": None,
+        "floor": 2,
+        "estimated_duration_minutes": 20,
+        "display_order": 40,
+        "is_active": True,
+    },
+    {
+        "slug": "banpo-girl-sculpture",
+        "name": CANONICAL_HALLS["banpo-girl-sculpture"],
+        "description": None,
+        "floor": 1,
+        "estimated_duration_minutes": 8,
+        "display_order": 50,
+        "is_active": True,
+    },
+    {
+        "slug": "education-center",
+        "name": CANONICAL_HALLS["education-center"],
+        "description": None,
+        "floor": 2,
+        "estimated_duration_minutes": 18,
+        "display_order": 60,
+        "is_active": True,
+    },
+    {
+        "slug": "peony-garden",
+        "name": CANONICAL_HALLS["peony-garden"],
+        "description": None,
+        "floor": 3,
+        "estimated_duration_minutes": 10,
+        "display_order": 70,
+        "is_active": True,
+    },
+    {
+        "slug": "temporary-hall-1",
+        "name": CANONICAL_HALLS["temporary-hall-1"],
+        "description": None,
+        "floor": 3,
+        "estimated_duration_minutes": 15,
+        "display_order": 90,
+        "is_active": True,
+    },
+    {
+        "slug": "temporary-hall-2",
+        "name": CANONICAL_HALLS["temporary-hall-2"],
+        "description": None,
+        "floor": 3,
+        "estimated_duration_minutes": 15,
+        "display_order": 100,
+        "is_active": True,
+    },
+]
+
+LEGACY_HALL_SLUGS: dict[str, str] = {
+    "relic-hall": "basic-exhibition-hall",
+    "pottery-spirit-hall": "basic-exhibition-hall",
+    "civilization-spark-hall": "basic-exhibition-hall",
+    "site-hall": "site-protection-hall",
+    "site-archaeology-hall": "site-protection-hall",
+    "bronze-a": "basic-exhibition-hall",
+    "bronze-b": "basic-exhibition-hall",
+    "ceramics": "kiln-hall",
+    "painting-a": "basic-exhibition-hall",
+    "painting-b": "basic-exhibition-hall",
+    "jade": "basic-exhibition-hall",
+    "gold-silver": "basic-exhibition-hall",
+    "sculpture": "banpo-girl-sculpture",
+    "special": "temporary-hall-1",
+}
+
+CANONICAL_HALL_SLUGS = set(CANONICAL_HALLS)
+
 HALL_ALIASES: dict[str, str] = {
     **{slug: slug for slug in CANONICAL_HALLS},
+    **LEGACY_HALL_SLUGS,
     "basic": "basic-exhibition-hall",
     "site": "site-protection-hall",
     "temp1": "temporary-hall-1",
@@ -70,6 +186,15 @@ def normalize_halls(values: list[str] | None) -> list[str]:
             seen.add(slug)
             result.append(slug)
     return result
+
+
+def is_canonical_hall(value: str | None) -> bool:
+    slug = normalize_hall(value)
+    return bool(slug and slug in CANONICAL_HALL_SLUGS)
+
+
+def canonical_hall_contract() -> list[dict]:
+    return [dict(item) for item in HALL_CONTRACT]
 
 
 def hall_display_name(value: str | None) -> str:

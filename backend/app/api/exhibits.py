@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.api.deps import SessionDep
 from app.application.exhibit_service import ExhibitService
+from app.application.hall_normalizer import normalize_hall
 from app.infra.postgres.adapters import PostgresExhibitRepository
 
 router = APIRouter(prefix="/exhibits", tags=["exhibits"])
@@ -27,6 +28,10 @@ def _is_displayable_exhibit_name(name: str | None) -> bool:
 
 def _filter_displayable_exhibits(exhibits):
     return [e for e in exhibits if _is_displayable_exhibit_name(getattr(e, "name", ""))]
+
+
+def _normalize_response_hall(value: str | None) -> str:
+    return normalize_hall(value) or value or ""
 
 
 # ============================================================================
@@ -139,13 +144,13 @@ async def list_exhibits(
             skip=skip,
             limit=limit,
             category=category,
-            hall=hall,
+            hall=_normalize_response_hall(hall) if hall else None,
             floor=floor,
         )
         total = await service.count_search_exhibits(
             query=search,
             category=category,
-            hall=hall,
+            hall=_normalize_response_hall(hall) if hall else None,
             floor=floor,
         )
     else:
@@ -153,10 +158,14 @@ async def list_exhibits(
             skip=skip,
             limit=limit,
             category=category,
-            hall=hall,
+            hall=_normalize_response_hall(hall) if hall else None,
             floor=floor,
         )
-        total = await service.count_exhibits(category=category, hall=hall, floor=floor)
+        total = await service.count_exhibits(
+            category=category,
+            hall=_normalize_response_hall(hall) if hall else None,
+            floor=floor,
+        )
 
     raw_count = len(exhibits)
     exhibits = _filter_displayable_exhibits(exhibits)
@@ -168,7 +177,7 @@ async def list_exhibits(
                 id=e.id.value,
                 name=e.name,
                 category=e.category,
-                hall=e.hall,
+                hall=_normalize_response_hall(e.hall),
                 floor=e.location.floor,
                 era=e.era,
                 importance=e.importance,
@@ -203,7 +212,7 @@ async def get_exhibit_stats(
     # Calculate hall stats
     hall_counts: dict[tuple[str, int], int] = {}
     for e in all_exhibits:
-        key = (e.hall, e.location.floor)
+        key = (_normalize_response_hall(e.hall), e.location.floor)
         hall_counts[key] = hall_counts.get(key, 0) + 1
 
     return ExhibitStatsResponse(
@@ -240,7 +249,7 @@ async def list_halls(
     This is a public endpoint - no authentication required.
     """
     service = get_exhibit_service(session)
-    return await service.get_all_halls()
+    return sorted(set(_normalize_response_hall(hall) for hall in await service.get_all_halls()))
 
 
 @router.get("/{exhibit_id}", response_model=ExhibitDetail, summary="Get exhibit detail")
@@ -279,7 +288,7 @@ async def get_exhibit(
         location_x=exhibit.location.x,
         location_y=exhibit.location.y,
         floor=exhibit.location.floor,
-        hall=exhibit.hall,
+        hall=_normalize_response_hall(exhibit.hall),
         category=exhibit.category,
         era=exhibit.era,
         importance=exhibit.importance,

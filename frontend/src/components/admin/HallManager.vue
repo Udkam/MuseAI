@@ -37,7 +37,7 @@ const rules = {
 
 const pageLoading = computed(() => loading.value || fetchLoading.value || syncLoading.value)
 const legacyRows = computed(() => getLegacyHallRows(rawHalls.value))
-const backendMatchedCount = computed(() => halls.value.filter((hall) => hall.backend_id || hall.id || hall.existsInBackend).length)
+const backendMatchedCount = computed(() => halls.value.filter((hall) => hall.hasBackend).length)
 const activeCount = computed(() => halls.value.filter((hall) => hall.is_active !== false).length)
 
 onMounted(fetchHalls)
@@ -189,7 +189,9 @@ async function handleSubmit() {
     >
       <template #default>
         <div class="legacy-list">
-          <span v-for="item in legacyRows" :key="item.slug">{{ item.name || item.slug }} → {{ item.target }}</span>
+          <span v-for="item in legacyRows" :key="item.slug">
+            {{ item.name || item.slug }} -> {{ item.targetName }} ({{ item.targetSlug }})
+          </span>
         </div>
       </template>
     </el-alert>

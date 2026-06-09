@@ -1,10 +1,9 @@
 <script setup>
 import { computed } from 'vue'
 import { useTour } from '../../../composables/useTour.js'
+import { getHallDisplayName } from '../../../constants/banpo.js'
 
-const { tourSession, currentHall, hallExhibits, completeHall } = useTour()
-
-const hallNames = { 'relic-hall': '出土文物展厅', 'site-hall': '遗址保护大厅' }
+const { tourSession, currentHall, hallExhibits, completeHall, leaveHall } = useTour()
 
 const visitedExhibitIds = computed(() => tourSession.value?.visited_exhibit_ids ?? [])
 
@@ -14,7 +13,7 @@ const exhibitProgress = computed(() => {
   return { visited, total, percent: total ? Math.round((visited / total) * 100) : 0 }
 })
 
-const currentHallName = computed(() => hallNames[currentHall.value] || currentHall.value || '-')
+const currentHallName = computed(() => currentHall.value ? getHallDisplayName(currentHall.value) : '-')
 </script>
 
 <template>
@@ -52,13 +51,16 @@ const currentHallName = computed(() => hallNames[currentHall.value] || currentHa
     </div>
 
     <div class="progress-section">
-      <el-button
-        data-testid="complete-hall-btn"
-        type="primary"
-        @click="completeHall"
-      >
-        完成当前展厅
-      </el-button>
+      <div class="progress-actions">
+        <el-button
+          data-testid="complete-hall-btn"
+          type="primary"
+          @click="completeHall"
+        >
+          完成当前展厅
+        </el-button>
+        <el-button plain @click="leaveHall">离开展厅</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -136,5 +138,11 @@ const currentHallName = computed(() => hallNames[currentHall.value] || currentHa
 .empty-hint {
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+.progress-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>
