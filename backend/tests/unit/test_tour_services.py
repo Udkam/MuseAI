@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from app.application.tour_report_service import (
     _generate_one_liner_llm,
+    aggregate_stats,
     build_reflection_summary,
     calculate_radar_scores,
     detect_ceramic_question,
@@ -390,6 +391,38 @@ async def test_record_events_empty():
 
 
 @pytest.mark.asyncio
+async def test_record_events_skips_existing_client_event_id():
+    from app.application.tour_event_service import record_events
+
+    mock_session = AsyncMock()
+    mock_session.commit.return_value = None
+    mock_session.refresh.return_value = None
+    existing = _make_event_model(event_meta={"client_event_id": "dup-1"})
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [existing]
+    mock_session.execute.return_value = mock_result
+
+    events_data = [
+        {
+            "event_type": "exhibit_question",
+            "hall": "basic-exhibition-hall",
+            "metadata": {"client_event_id": "dup-1", "message": "重复问题"},
+        },
+        {
+            "event_type": "exhibit_question",
+            "hall": "basic-exhibition-hall",
+            "metadata": {"client_event_id": "new-1", "message": "新问题"},
+        },
+    ]
+
+    result = await record_events(mock_session, "session-1", events_data)
+
+    assert len(result) == 1
+    assert mock_session.add.call_count == 1
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_get_events_by_session():
     from app.application.tour_event_service import get_events_by_session
 
@@ -580,6 +613,45 @@ def test_get_report_theme():
     assert get_report_theme("B") == "field_study"
     assert get_report_theme("C") == "history_inquiry"
     assert get_report_theme("D") == "artifact_study"
+
+
+def test_aggregate_stats_dedupes_retried_question_events():
+    session = _make_session(started_at=datetime.now(UTC) - timedelta(minutes=5))
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={
+                "client_event_id": "q-1",
+                "message": "半坡的石器和骨器是做什么用的？",
+                "is_ceramic_question": True,
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={
+                "client_event_id": "q-1",
+                "message": "半坡的石器和骨器是做什么用的？",
+                "is_ceramic_question": True,
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={"message": "半坡的石器和骨器是做什么用的？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={"message": "半坡的石器和骨器是做什么用的？"},
+        ).to_entity(),
+    ]
+
+    stats = aggregate_stats(events, session)
+
+    assert stats["total_questions"] == 2
+    assert stats["ceramic_questions"] == 1
 
 
 def test_reflection_summary_detects_interest_shift():

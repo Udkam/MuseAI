@@ -21,9 +21,33 @@ async def record_events(
     if not events:
         return []
 
+    incoming_client_ids = {
+        str((event_data.get("metadata") or {}).get("client_event_id"))
+        for event_data in events
+        if (event_data.get("metadata") or {}).get("client_event_id")
+    }
+    existing_client_ids: set[str] = set()
+    if incoming_client_ids:
+        result = await session.execute(
+            select(TourEventModel).where(TourEventModel.tour_session_id == tour_session_id)
+        )
+        for model in result.scalars().all():
+            meta = model.event_meta or {}
+            client_event_id = meta.get("client_event_id")
+            if client_event_id:
+                existing_client_ids.add(str(client_event_id))
+
     now = datetime.now(UTC)
     models = []
+    batch_client_ids: set[str] = set()
     for event_data in events:
+        metadata = event_data.get("metadata") or {}
+        client_event_id = metadata.get("client_event_id")
+        if client_event_id:
+            client_event_id = str(client_event_id)
+            if client_event_id in existing_client_ids or client_event_id in batch_client_ids:
+                continue
+            batch_client_ids.add(client_event_id)
         model = TourEventModel(
             id=str(uuid.uuid4()),
             tour_session_id=tour_session_id,
@@ -31,11 +55,14 @@ async def record_events(
             exhibit_id=event_data.get("exhibit_id"),
             hall=event_data.get("hall"),
             duration_seconds=event_data.get("duration_seconds"),
-            event_meta=event_data.get("metadata"),
+            event_meta=metadata,
             created_at=now,
         )
         session.add(model)
         models.append(model)
+
+    if not models:
+        return []
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:

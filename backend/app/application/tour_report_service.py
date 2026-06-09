@@ -286,6 +286,19 @@ def _ensure_aware(dt):
     return dt
 
 
+def _event_metadata(event) -> dict:
+    return getattr(event, "metadata", None) or {}
+
+
+def _event_dedupe_key(event, *parts: Any) -> str:
+    metadata = _event_metadata(event)
+    client_event_id = metadata.get("client_event_id")
+    if client_event_id:
+        return str(client_event_id)
+    normalized_parts = [str(part or "").strip() for part in parts]
+    return "|".join(normalized_parts)
+
+
 def aggregate_stats(events: list, tour_session) -> dict:
     total_duration = 0.0
     started_at = _ensure_aware(tour_session.started_at)
@@ -300,21 +313,52 @@ def aggregate_stats(events: list, tour_session) -> dict:
     total_questions = 0
     ceramic_questions = 0
     viewed_exhibits: set[str] = set()
+    seen_questions: set[str] = set()
+    seen_duration_events: set[str] = set()
 
     for event in events:
+        metadata = _event_metadata(event)
         if event.event_type == "exhibit_view" and event.exhibit_id and event.duration_seconds:
+            duration_key = _event_dedupe_key(
+                event,
+                event.event_type,
+                event.exhibit_id,
+                event.hall,
+                event.duration_seconds,
+            )
+            if duration_key in seen_duration_events:
+                continue
+            seen_duration_events.add(duration_key)
             eid = event.exhibit_id.value if hasattr(event.exhibit_id, 'value') else str(event.exhibit_id)
             exhibit_durations[eid] = exhibit_durations.get(eid, 0) + event.duration_seconds
             viewed_exhibits.add(eid)
         elif event.event_type == "hall_leave" and event.hall and event.duration_seconds:
+            duration_key = _event_dedupe_key(
+                event,
+                event.event_type,
+                event.hall,
+                event.duration_seconds,
+            )
+            if duration_key in seen_duration_events:
+                continue
+            seen_duration_events.add(duration_key)
             hall = normalize_hall(event.hall)
             if not hall:
                 continue
             hall_durations[hall] = hall_durations.get(hall, 0) + event.duration_seconds
         elif event.event_type == "exhibit_question":
+            question_text = metadata.get("message") or metadata.get("question") or ""
+            question_key = _event_dedupe_key(
+                event,
+                event.event_type,
+                normalize_hall(event.hall),
+                question_text,
+            )
+            if question_key in seen_questions:
+                continue
+            seen_questions.add(question_key)
             total_questions += 1
-            meta = event.metadata or {}
-            if meta.get("is_ceramic_question"):
+            if metadata.get("is_ceramic_question"):
                 ceramic_questions += 1
 
     most_viewed_exhibit_id = None
