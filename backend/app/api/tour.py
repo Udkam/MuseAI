@@ -319,6 +319,27 @@ def _record_knowledge_phrases(answer_text: str, topic: str) -> list[str]:
     return phrases[:3]
 
 
+def _append_summary_sentence(parts: list[str], sentence: str, max_len: int = 300) -> None:
+    if sentence and len("".join(parts) + sentence) <= max_len:
+        parts.append(sentence)
+
+
+def _build_record_summary_point(
+    hall_text: str,
+    question_text: str,
+    answer_text: str,
+    topic: str,
+) -> str:
+    focus_phrases = _record_focus_phrases(question_text, answer_text, topic)
+    knowledge_phrases = _record_knowledge_phrases(answer_text, topic)
+    subject = f"{hall_text}的问答" if hall_text and hall_text != "半坡遗址" else "本次问答"
+    parts: list[str] = []
+    _append_summary_sentence(parts, f"{subject}集中在{'、'.join(focus_phrases)}。")
+    _append_summary_sentence(parts, f"回答中可提炼为：{'；'.join(knowledge_phrases)}。")
+    _append_summary_sentence(parts, "这些线索可继续回到展品、展签和遗迹位置核对。")
+    return "".join(parts)
+
+
 def _record_point_from_answer(answer: str | None) -> str:
     text = _compact_record_text(answer, 300)
     if not text:
@@ -397,7 +418,6 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
     if not entries:
         return []
 
-    persona_name, _frame = _persona_record_frame(persona)
     hall_names = []
     for entry in entries:
         hall_name = hall_display_name(entry["hall"]) if entry["hall"] else ""
@@ -407,13 +427,7 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
     questions_text = "”“".join(entry["question"] for entry in entries[:4])
     answer_text = " ".join(entry["answer"] for entry in entries if entry["answer"])
     topic = _infer_record_topic(" ".join([questions_text, answer_text]))
-    focus_phrases = _record_focus_phrases(questions_text, answer_text, topic)
-    knowledge_phrases = _record_knowledge_phrases(answer_text, topic)
-    point = f"以{persona_name}的视角看，本次游览主要围绕{hall_text}展开，关注点落在{topic}。"
-    point += f"关注点：{'、'.join(focus_phrases)}。"
-    point += f"知识点：{'；'.join(knowledge_phrases)}。"
-    point += "后续可按展品、展签和遗迹位置核对这些判断。"
-    point = _compact_record_text(point, 300)
+    point = _build_record_summary_point(hall_text, questions_text, answer_text, topic)
     return [{"question": "游览记录摘要", "point": point}]
 
 
