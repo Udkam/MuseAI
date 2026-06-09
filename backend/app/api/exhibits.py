@@ -8,9 +8,30 @@ from pydantic import BaseModel
 
 from app.api.deps import SessionDep
 from app.application.exhibit_service import ExhibitService
+from app.application.hall_normalizer import normalize_hall
 from app.infra.postgres.adapters import PostgresExhibitRepository
 
 router = APIRouter(prefix="/exhibits", tags=["exhibits"])
+
+NON_EXHIBIT_NAMES = {
+    "半坡人",
+    "生态环境",
+    "临展厅一当期主题",
+    "临展厅二当期主题",
+}
+
+
+def _is_displayable_exhibit_name(name: str | None) -> bool:
+    value = (name or "").strip()
+    return bool(value) and value not in NON_EXHIBIT_NAMES
+
+
+def _filter_displayable_exhibits(exhibits):
+    return [e for e in exhibits if _is_displayable_exhibit_name(getattr(e, "name", ""))]
+
+
+def _normalize_response_hall(value: str | None) -> str:
+    return normalize_hall(value) or value or ""
 
 
 # ============================================================================
@@ -123,30 +144,32 @@ async def list_exhibits(
             skip=skip,
             limit=limit,
             category=category,
-            hall=hall,
+            hall=_normalize_response_hall(hall) if hall else None,
             floor=floor,
         )
-        # Get total count for search results
-        all_exhibits = await service.search_exhibits(
+        total = await service.count_search_exhibits(
             query=search,
-            skip=0,
-            limit=10000,
             category=category,
-            hall=hall,
+            hall=_normalize_response_hall(hall) if hall else None,
             floor=floor,
         )
-        total = len(all_exhibits)
     else:
         exhibits = await service.list_exhibits(
             skip=skip,
             limit=limit,
             category=category,
-            hall=hall,
+            hall=_normalize_response_hall(hall) if hall else None,
             floor=floor,
         )
-        # Get total count for pagination
-        all_exhibits = await service.list_exhibits(skip=0, limit=10000, category=category, hall=hall, floor=floor)
-        total = len(all_exhibits)
+        total = await service.count_exhibits(
+            category=category,
+            hall=_normalize_response_hall(hall) if hall else None,
+            floor=floor,
+        )
+
+    raw_count = len(exhibits)
+    exhibits = _filter_displayable_exhibits(exhibits)
+    total = max(0, total - (raw_count - len(exhibits)))
 
     return ExhibitListResponse(
         exhibits=[
@@ -154,7 +177,7 @@ async def list_exhibits(
                 id=e.id.value,
                 name=e.name,
                 category=e.category,
-                hall=e.hall,
+                hall=_normalize_response_hall(e.hall),
                 floor=e.location.floor,
                 era=e.era,
                 importance=e.importance,
@@ -179,7 +202,7 @@ async def get_exhibit_stats(
     """
     service = get_exhibit_service(session)
 
-    all_exhibits = await service.list_all_active()
+    all_exhibits = _filter_displayable_exhibits(await service.list_all_active())
 
     # Calculate category stats
     category_counts: dict[str, int] = {}
@@ -189,7 +212,7 @@ async def get_exhibit_stats(
     # Calculate hall stats
     hall_counts: dict[tuple[str, int], int] = {}
     for e in all_exhibits:
-        key = (e.hall, e.location.floor)
+        key = (_normalize_response_hall(e.hall), e.location.floor)
         hall_counts[key] = hall_counts.get(key, 0) + 1
 
     return ExhibitStatsResponse(
@@ -226,7 +249,7 @@ async def list_halls(
     This is a public endpoint - no authentication required.
     """
     service = get_exhibit_service(session)
-    return await service.get_all_halls()
+    return sorted(set(_normalize_response_hall(hall) for hall in await service.get_all_halls()))
 
 
 @router.get("/{exhibit_id}", response_model=ExhibitDetail, summary="Get exhibit detail")
@@ -252,7 +275,7 @@ async def get_exhibit(
 
     exhibit = await service.get_exhibit(exhibit_id)
 
-    if exhibit is None or not exhibit.is_active:
+    if exhibit is None or not exhibit.is_active or not _is_displayable_exhibit_name(exhibit.name):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Exhibit not found: {exhibit_id}",
@@ -265,7 +288,7 @@ async def get_exhibit(
         location_x=exhibit.location.x,
         location_y=exhibit.location.y,
         floor=exhibit.location.floor,
-        hall=exhibit.hall,
+        hall=_normalize_response_hall(exhibit.hall),
         category=exhibit.category,
         era=exhibit.era,
         importance=exhibit.importance,

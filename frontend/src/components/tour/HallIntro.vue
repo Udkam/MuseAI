@@ -8,9 +8,10 @@ const emit = defineEmits(['done'])
 const { tourSession, sendTourMessage, streamingContent, chatMessages, loading } = useTour()
 
 const hallIntroPrompts = {
-  A: `请以考古队长的身份，为游客介绍${props.hallName}。简要说明这个展厅的主题和重点观察方向，3-4句话即可。`,
-  B: `请以半坡原住民的身份，为远道而来的朋友介绍${props.hallName}。用第一人称，2-3句话即可。`,
-  C: `请以历史老师的身份，为同学们介绍${props.hallName}。抛出一个引人思考的问题，2-3句话即可。`,
+  A: `请以考古研究员的身份介绍${props.hallName}。说明这个展厅适合观察哪些证据、哪些判断需要谨慎，3句话以内。`,
+  B: `请以研学记录员的身份介绍${props.hallName}。给出本展厅的观察任务、记录重点和可复盘问题，3句话以内。`,
+  C: `请以历史追问者的身份介绍${props.hallName}。说明这个展厅能引出哪些关于史前社会的问题，3句话以内。`,
+  D: `请以器物研究员的身份介绍${props.hallName}。提示用户关注材料、器形、纹饰、制作痕迹和使用场景，3句话以内。`,
 }
 
 onMounted(async () => {

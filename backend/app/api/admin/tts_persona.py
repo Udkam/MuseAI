@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.api.deps import CurrentAdminUser, PromptCacheDep, SessionDep
 from app.application.tts_service import (
+    DEFAULT_TTS_VOICE,
     VOICE_KEY,
     extract_voice,
     extract_voice_description,
@@ -21,8 +22,26 @@ from app.infra.postgres.adapters import PostgresPromptRepository
 
 router = APIRouter(prefix="/admin/tts", tags=["admin-tts"])
 
-VALID_PERSONAS = {"a", "b", "c"}
+VALID_PERSONAS = {"a", "b", "c", "d"}
 PERSONA_KEY_PREFIX = "tour_tts_persona_"
+PERSONA_DEFAULTS = {
+    "a": {
+        "name": "Tour TTS - 考古研究员",
+        "description": "考古研究员语音人设：统一使用冰糖声线，明亮清晰、自然偏快，突出证据与推理边界。",
+    },
+    "b": {
+        "name": "Tour TTS - 研学记录员",
+        "description": "研学记录员语音人设：统一使用冰糖声线，明亮清晰、自然偏快，适合边看边记和研学引导。",
+    },
+    "c": {
+        "name": "Tour TTS - 历史追问者",
+        "description": "历史追问者语音人设：统一使用冰糖声线，明亮清晰、自然偏快，突出问题意识和历史联系。",
+    },
+    "d": {
+        "name": "Tour TTS - 器物研究员",
+        "description": "器物研究员语音人设：统一使用冰糖声线，明亮清晰、自然偏快，适合材料、器形、纹饰和工艺细读。",
+    },
+}
 
 
 class TtsPersonaResponse(BaseModel):
@@ -78,11 +97,13 @@ def _normalize_variables(variables: list) -> list[dict[str, str]]:
 
 def _persona_to_response(prompt: Prompt) -> TtsPersonaResponse:
     normalized = _normalize_variables(prompt.variables)
+    persona_code = prompt.key.removeprefix(PERSONA_KEY_PREFIX)
+    defaults = PERSONA_DEFAULTS.get(persona_code)
     return TtsPersonaResponse(
         id=prompt.id.value,
         key=prompt.key,
-        name=prompt.name,
-        description=prompt.description,
+        name=defaults["name"] if defaults else prompt.name,
+        description=defaults["description"] if defaults else prompt.description,
         category=prompt.category,
         content=prompt.content,
         voice=extract_voice(normalized),
@@ -96,12 +117,30 @@ def _persona_to_response(prompt: Prompt) -> TtsPersonaResponse:
 
 
 def _validate_persona(persona: str) -> str:
+    persona = persona.lower()
     if persona not in VALID_PERSONAS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid persona: {persona}. Must be one of: a, b, c",
+            detail=f"Invalid persona: {persona}. Must be one of: a, b, c, d",
         )
     return f"{PERSONA_KEY_PREFIX}{persona}"
+
+
+def _build_tts_variables(base_variables: list | None, voice_description: str | None) -> list[dict[str, str]]:
+    new_variables = store_voice_description(base_variables or [], voice_description or "")
+    new_variables = [v for v in new_variables if v.get("name") != VOICE_KEY]
+    new_variables.append({"name": VOICE_KEY, "description": DEFAULT_TTS_VOICE})
+    return new_variables
+
+
+def _default_tts_content(persona_code: str) -> str:
+    names = {"a": "考古研究员", "b": "研学记录员", "c": "历史追问者", "d": "器物研究员"}
+    return (
+        f"【导览身份】{names[persona_code]}\n"
+        "【播报声线】统一使用冰糖声线。声音应清亮、自然、偏年轻女性；"
+        "语速稍快但吐字清楚，避免中年男声、拖沓停顿和过度戏剧化。\n"
+        "【播报方式】像现场导览员一样直接说明重点，不读出 Markdown 标记，不读出内部处理说明。"
+    )
 
 
 @router.get("/personas", response_model=TtsPersonaListResponse, summary="List TTS personas")
@@ -110,9 +149,29 @@ async def list_tts_personas(
     current_user: CurrentAdminUser,
 ) -> TtsPersonaListResponse:
     repository = PostgresPromptRepository(session)
-    prompts = await repository.list_all(category="tts")
+    existing_prompts = await repository.list_all(category="tts")
+    by_key = {prompt.key: prompt for prompt in existing_prompts}
+    created = False
+    for persona_code, defaults in PERSONA_DEFAULTS.items():
+        key = f"{PERSONA_KEY_PREFIX}{persona_code}"
+        if key in by_key:
+            continue
+        prompt = await repository.create(
+            key=key,
+            name=defaults["name"],
+            category="tts",
+            content=_default_tts_content(persona_code),
+            description=defaults["description"],
+            variables=_build_tts_variables([], None),
+        )
+        by_key[key] = prompt
+        created = True
+    if created:
+        await session.commit()
+
+    prompts = [by_key[f"{PERSONA_KEY_PREFIX}{code}"] for code in sorted(PERSONA_DEFAULTS)]
     return TtsPersonaListResponse(
-        personas=[_persona_to_response(p) for p in prompts],
+        personas=[_persona_to_response(p) for p in prompts if p.is_active],
         total=len(prompts),
     )
 
@@ -147,33 +206,32 @@ async def update_tts_persona(
 
     existing = await repository.get_by_key(key)
     if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"TTS persona not found: {persona}",
-        )
-
-    new_variables = store_voice_description(
-        existing.variables, request.voice_description or ""
-    )
-
-    if request.voice is not None:
-        new_variables = [v for v in new_variables if v.get("name") != VOICE_KEY]
-        if request.voice:
-            new_variables.append({"name": VOICE_KEY, "description": request.voice})
-
-    try:
-        prompt = await repository.update_with_variables(
+        persona_code = persona.lower()
+        defaults = PERSONA_DEFAULTS[persona_code]
+        prompt = await repository.create(
             key=key,
+            name=defaults["name"],
+            category="tts",
             content=request.content,
-            variables=new_variables,
-            changed_by=current_user.get("email"),
-            change_reason=request.change_reason,
+            description=defaults["description"],
+            variables=_build_tts_variables([], request.voice_description),
         )
-    except PromptNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"TTS persona not found: {persona}",
-        ) from None
+    else:
+        new_variables = _build_tts_variables(existing.variables, request.voice_description)
+
+        try:
+            prompt = await repository.update_with_variables(
+                key=key,
+                content=request.content,
+                variables=new_variables,
+                changed_by=current_user.get("email"),
+                change_reason=request.change_reason,
+            )
+        except PromptNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"TTS persona not found: {persona}",
+            ) from None
 
     await prompt_cache.refresh(prompt)
     return _persona_to_response(prompt)

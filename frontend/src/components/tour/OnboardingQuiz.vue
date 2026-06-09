@@ -11,29 +11,32 @@ const loading = ref(false)
 const questions = [
   {
     key: 'interest_type',
-    title: '如果你穿越回了6000年前的半坡，你第一件想搞清楚的事是？',
+    title: '今天你最希望从哪个角度进入半坡？',
     options: [
-      { value: 'A', label: '半坡人平时吃什么？房屋如何构建？', desc: '生存与技术' },
-      { value: 'B', label: '陶器上那些诡异的人面鱼纹到底象征着什么？', desc: '符号与艺术' },
-      { value: 'C', label: '谁是首领？打来的猎物怎么分？', desc: '社会与权力' },
+      { value: 'A', label: '带着任务研学', desc: '边看边记，把展厅整理成可复盘的笔记' },
+      { value: 'B', label: '证据怎样成史', desc: '像研究者一样，看证据、推理和不确定性' },
+      { value: 'C', label: '历史问题追问', desc: '把半坡放进更大的史前中国和今天来理解' },
+      { value: 'D', label: '器物细节观察', desc: '从材料、器形、纹饰和工艺读懂文物' },
     ],
   },
   {
     key: 'persona',
-    title: '接下来的半个小时，你希望陪你逛展的AI导览员是什么人设？',
+    title: '接下来希望 MuseAI 以哪种身份陪你？',
     options: [
-      { value: 'A', label: '严谨求实的考古队长', desc: '硬核发掘数据与学术推论' },
-      { value: 'B', label: '穿越来的半坡原住民', desc: '村民视角的第一人称沉浸' },
-      { value: 'C', label: '爱提问的历史老师', desc: '多观点引导思考' },
+      { value: 'A', label: '考古研究员', desc: '从地层、遗存和证据链进入问题' },
+      { value: 'B', label: '研学记录员', desc: '把观察转化为任务、记录点和摘要' },
+      { value: 'C', label: '历史追问者', desc: '持续追问制度、公共生活和历史解释' },
+      { value: 'D', label: '器物研究员', desc: '聚焦器形、纹饰、工艺和使用场景' },
     ],
   },
   {
     key: 'assumption',
-    title: '凭直觉，你认为6000年前的原始社会更接近哪种状态？',
+    title: '凭直觉，你认为半坡文明最重要的线索是？',
     options: [
-      { value: 'A', label: '没有压迫，人人平等的纯真年代', desc: '' },
-      { value: 'B', label: '饥寒交迫的荒野求生', desc: '' },
-      { value: 'C', label: '已经出现贫富分化和阶级的雏形', desc: '' },
+      { value: 'A', label: '工艺', desc: '陶器、石器和骨器如何被制作出来' },
+      { value: 'B', label: '聚落', desc: '房屋、壕沟、墓葬如何组织空间' },
+      { value: 'C', label: '社会组织', desc: '分工、协作、规则和公共生活如何形成' },
+      { value: 'D', label: '精神文化', desc: '图案、仪式和形象如何表达观念' },
     ],
   },
 ]

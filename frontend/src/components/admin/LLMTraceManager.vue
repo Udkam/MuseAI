@@ -232,7 +232,7 @@ onMounted(fetchTraces)
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="90" fixed="right">
+      <el-table-column label="操作" width="90">
         <template #default="{ row }">
           <el-button type="primary" size="small" @click="openDetail(row)">
             <el-icon><View /></el-icon>

@@ -22,7 +22,7 @@ describe('useTourWorkbench', () => {
     expect(stylePreferences.value.depth).toBe('standard')
     expect(stylePreferences.value.terminology).toBe('plain')
     expect(stylePreferences.value.enabled).toBe(true)
-    expect(ttsPreferences.value.voice).toBe('female_warm')
+    expect(ttsPreferences.value.voice).toBe('冰糖')
     expect(ttsPreferences.value.speed).toBe('1x')
     expect(ttsPreferences.value.autoPlay).toBe(false)
   })

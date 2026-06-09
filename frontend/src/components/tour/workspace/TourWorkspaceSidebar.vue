@@ -1,11 +1,10 @@
 <script setup>
 import { useTour } from '../../../composables/useTour.js'
 import { useTourWorkbench } from '../../../composables/useTourWorkbench.js'
+import { getHallDisplayName } from '../../../constants/banpo.js'
 
-const { currentHall, currentExhibit, exhibitIndex, personaLabel } = useTour()
+const { currentHall, currentExhibit, personaLabel, leaveHall } = useTour()
 const { activeTab } = useTourWorkbench()
-
-const hallNames = { 'relic-hall': '出土文物展厅', 'site-hall': '遗址保护大厅' }
 
 defineEmits(['switch-tab'])
 </script>
@@ -35,7 +34,7 @@ defineEmits(['switch-tab'])
       <div class="sidebar-info">
         <div class="info-item">
           <span class="info-label">展厅</span>
-          <span class="info-value">{{ hallNames[currentHall] || currentHall || '-' }}</span>
+          <span class="info-value">{{ currentHall ? getHallDisplayName(currentHall) : '-' }}</span>
         </div>
         <div class="info-item">
           <span class="info-label">展品</span>
@@ -46,6 +45,14 @@ defineEmits(['switch-tab'])
           <span class="info-value">{{ personaLabel || '-' }}</span>
         </div>
       </div>
+      <button
+        v-if="currentHall"
+        class="leave-hall-btn"
+        type="button"
+        @click="leaveHall"
+      >
+        离开展厅
+      </button>
     </div>
   </aside>
 </template>
@@ -119,5 +126,20 @@ defineEmits(['switch-tab'])
 .info-value {
   color: var(--color-text-primary);
   font-weight: 500;
+}
+
+.leave-hall-btn {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.leave-hall-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent-soft);
 }
 </style>

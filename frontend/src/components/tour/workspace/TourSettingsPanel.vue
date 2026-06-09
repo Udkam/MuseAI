@@ -111,14 +111,7 @@ const terminologyOptions = [
       <div class="settings-row" v-if="ttsPreferences.enabled">
         <span class="settings-label">音色</span>
         <el-select v-model="ttsPreferences.voice" size="small">
-          <el-option label="冰糖 (女)" value="冰糖" />
-          <el-option label="茉莉 (女)" value="茉莉" />
-          <el-option label="苏打 (男)" value="苏打" />
-          <el-option label="白桦 (男)" value="白桦" />
-          <el-option label="Mia (EN/F)" value="Mia" />
-          <el-option label="Chloe (EN/F)" value="Chloe" />
-          <el-option label="Milo (EN/M)" value="Milo" />
-          <el-option label="Dean (EN/M)" value="Dean" />
+          <el-option label="冰糖（美少女声线）" value="冰糖" />
         </el-select>
       </div>
     </div>

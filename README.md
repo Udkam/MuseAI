@@ -1,441 +1,243 @@
-# MuseAI
-
-Museum AI Guide System - An intelligent museum content interaction platform powered by RAG (Retrieval-Augmented Generation).
-
-[中文文档](README_CN.md)
-
-## Features
-
-- **Intelligent Q&A**: RAG-based question answering with contextual retrieval from museum knowledge base
-- **Hybrid Search**: Combines dense vector search and BM25 keyword search using Reciprocal Rank Fusion (RRF) with source deduplication
-- **Multi-turn Conversation**: Stateful conversations with query transformation strategies (HyDE, Step-back, Multi-query) and dynamic document filtering
-- **Document Ingestion**: Automatic hierarchical document chunking (parent-child) and embedding with Elasticsearch indexing
-- **Streaming Responses**: Real-time SSE (Server-Sent Events) streaming with optional TTS audio events
-- **User Authentication**: JWT-based authentication with rate limiting and token blacklisting
-- **Tour System**: Guided museum tours with session management, hall tracking, event recording, and post-visit reports
-- **Curator AI Agent**: AI-powered tour planning, exhibit narrative generation, and reflection prompts via LangGraph
-- **Text-to-Speech**: Sentence-level TTS streaming with persona management, Redis caching, and multiple provider support (Xiaomi, Mock)
-- **Visitor Profiles**: Personalized visitor profiles with interests, knowledge level, and narrative preferences
-- **Admin Panel**: Full admin interface for exhibits, halls, documents, prompts, TTS personas, and LLM trace auditing
-- **Design System**: Museum-themed design tokens and components built on Element Plus
-- **Health Monitoring**: Built-in health check endpoints for service observability
-
-## Architecture
-
-MuseAI follows a strict layered architecture:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Vue 3)                      │
-├─────────────────────────────────────────────────────────┤
-│                    API Layer (FastAPI)                   │
-├─────────────────────────────────────────────────────────┤
-│                  Application Layer                       │
-│         (Auth, Chat, Document, Ingestion Services)       │
-├─────────────────────────────────────────────────────────┤
-│                    Domain Layer                          │
-│              (Entities, Value Objects)                   │
-├─────────────────────────────────────────────────────────┤
-│                 Infrastructure Layer                     │
-│      (PostgreSQL, Elasticsearch, Redis, LLM)            │
-└─────────────────────────────────────────────────────────┘
-```
-
-## Tech Stack
-
-### Backend
-- **Framework**: FastAPI with async support
-- **ORM**: SQLAlchemy 2.0 (async)
-- **Validation**: Pydantic v2
-- **AI/ML**: LangChain, LangGraph, OpenAI-compatible LLMs
-- **Migrations**: Alembic
-
-### Frontend
-- **Framework**: Vue 3 with Composition API
-- **UI Library**: Element Plus (with museum design system)
-- **Build Tool**: Vite
-- **Routing**: Vue Router
-- **Composables**: Reusable hooks for auth, chat, tour, TTS, exhibits, etc.
-
-### Infrastructure
-- **Database**: PostgreSQL 16
-- **Search Engine**: Elasticsearch 8.x with IK analyzer
-- **Cache**: Redis 7
-- **LLM**: OpenAI-compatible providers (GPT-4o-mini)
-- **Embeddings**: Ollama (nomic-embed-text)
-- **Rerank**: OpenAI-compatible or SiliconFlow rerank providers
-- **TTS**: Xiaomi TTS provider (with Redis caching)
-
-## Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- Docker and Docker Compose
-- uv (Python package manager)
-
-## Quick Start
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/museai.git
-cd museai
-```
-
-### 2. Start Infrastructure Services
-
-```bash
-docker-compose up -d
-```
-
-This starts PostgreSQL, Elasticsearch, and Redis.
-
-### 3. Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your configuration. Required settings:
-
-```env
-# LLM Configuration (required in production)
-LLM_API_KEY=your-openai-api-key
-
-# JWT Secret (must be ≥32 characters in production)
-JWT_SECRET=your-secure-jwt-secret-key-here
-```
-
-### 4. Install Backend Dependencies
-
-```bash
-uv sync
-```
-
-### 5. Initialize Database
-
-```bash
-# Run database migrations (creates table schema)
-python scripts/init_db.py
-
-# Create an admin user
-python scripts/init_db.py --admin-email admin@museai.local --admin-password YourPassword123
-```
-
-> See [Database Initialization](#database-initialization) below for detailed instructions.
-
-### 6. Run Backend Server
-
-```bash
-uv run uvicorn backend.app.main:app --reload
-```
-
-The API will be available at `http://localhost:8000`.
-
-### 7. Install Frontend Dependencies
-
-```bash
-cd frontend
-npm install
-```
-
-### 8. Run Frontend Development Server
-
-```bash
-npm run dev
-```
-
-The frontend will be available at `http://localhost:5173`.
-
-## API Documentation
-
-Once the backend is running, access the interactive API documentation:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-### Key Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/auth/register` | POST | Register new user |
-| `/api/v1/auth/login` | POST | Login and get JWT token |
-| `/api/v1/auth/logout` | POST | Logout (blacklist token) |
-| `/api/v1/documents/upload` | POST | Upload document for ingestion |
-| `/api/v1/documents` | GET | List user's documents |
-| `/api/v1/chat/sessions` | GET/POST | Manage chat sessions |
-| `/api/v1/chat/ask` | POST | Ask question (non-streaming) |
-| `/api/v1/chat/ask/stream` | POST | Ask question (SSE streaming) |
-| `/api/v1/chat/guest/message` | POST | Send guest message (SSE) |
-| `/api/v1/exhibits` | GET | Browse exhibits (public) |
-| `/api/v1/exhibits/{id}` | GET | Get exhibit detail |
-| `/api/v1/profile` | GET/PUT | Get/update visitor profile |
-| `/api/v1/tour/sessions` | POST | Create tour session |
-| `/api/v1/tour/sessions/{id}/chat/stream` | POST | Stream tour chat (SSE) |
-| `/api/v1/tour/sessions/{id}/report` | GET/POST | Generate/get tour report |
-| `/api/v1/curator/plan-tour` | POST | Plan museum tour (AI) |
-| `/api/v1/curator/narrative` | POST | Generate exhibit narrative (AI) |
-| `/api/v1/tts/synthesize` | POST | Synthesize speech from text |
-| `/api/v1/admin/exhibits` | GET/POST | Admin exhibit management |
-| `/api/v1/admin/halls` | GET/POST | Admin hall management |
-| `/api/v1/admin/prompts` | GET | Admin prompt management |
-| `/api/v1/admin/documents` | GET/POST | Admin document management |
-| `/api/v1/admin/llm-traces` | GET | View LLM call traces |
-| `/api/v1/admin/tts/personas` | GET/PUT | Manage TTS personas |
-| `/api/v1/health` | GET | Health check |
-| `/api/v1/ready` | GET | Readiness check |
-
-## Configuration
-
-Environment variables (see `.env.example`):
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `APP_ENV` | Environment (development/production) | `development` |
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `REDIS_URL` | Redis connection string | Required |
-| `ELASTICSEARCH_URL` | Elasticsearch endpoint | Required |
-| `JWT_SECRET` | JWT signing secret (≥32 chars in prod) | Required |
-| `JWT_ALGORITHM` | JWT algorithm | `HS256` |
-| `JWT_EXPIRE_MINUTES` | Token expiration time | `1440` |
-| `LLM_PROVIDER` | LLM provider | `openai` |
-| `LLM_BASE_URL` | LLM API base URL | `https://api.openai.com/v1` |
-| `LLM_API_KEY` | LLM API key | Required |
-| `LLM_MODEL` | Model name | `gpt-4o-mini` |
-| `EMBEDDING_PROVIDER` | Embedding provider | `ollama` |
-| `EMBEDDING_OLLAMA_BASE_URL` | Ollama base URL | `http://localhost:11434` |
-| `EMBEDDING_OLLAMA_MODEL` | Embedding model | `nomic-embed-text` |
-| `ELASTICSEARCH_INDEX` | ES index name | `museai_chunks_v1` |
-| `EMBEDDING_DIMS` | Embedding dimensions | `1536` |
-| `RERANK_PROVIDER` | Rerank provider (openai, cohere, custom) | `openai` |
-| `RERANK_MODEL` | Rerank model identifier | `rerank-v1` |
-| `RERANK_TOP_N` | Number of rerank results | `10` |
-| `TTS_ENABLED` | Enable text-to-speech | `false` |
-| `TTS_PROVIDER` | TTS provider (xiaomi, mock) | `xiaomi` |
-| `TTS_DEFAULT_VOICE` | Default TTS voice/persona | `冰糖` |
-
-## Database Initialization
-
-The project uses Alembic for database schema migrations. The app also auto-creates missing tables on startup, but using migrations is recommended to ensure correct schema versioning.
-
-### Initialization Script
-
-`scripts/init_db.py` is the unified initialization entry point covering PostgreSQL migrations, Elasticsearch index creation, and service connectivity checks:
-
-```bash
-# Run migrations + ES index creation + service checks
-python scripts/init_db.py
-
-# Run migrations + create admin user
-python scripts/init_db.py --admin-email admin@museai.local --admin-password YourPassword123
-
-# Full init: migrations + ES index + admin + dev test data
-python scripts/init_db.py --admin-email admin@museai.local --admin-password YourPassword123 --seed-dev
-
-# Only run PostgreSQL migrations
-python scripts/init_db.py --schema-only
-
-# Only create ES index (idempotent, skips if exists)
-python scripts/init_db.py --init-es
-```
-
-### Production Deployment
-
-```bash
-# 1. Start infrastructure
-docker-compose up -d
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env: set JWT_SECRET, LLM_API_KEY, etc.
-
-# 3. Install dependencies
-uv sync
-
-# 4. Initialize all services (DB migrations + ES index + admin)
-python scripts/init_db.py --init-es --admin-email admin@museum.cn --admin-password 'YourStr0ngPass!'
-
-# 5. Start the service
-uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-```
-
-### Local Development
-
-```bash
-# 1. Start infrastructure
-docker-compose up -d
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env: ensure DATABASE_URL points to local PostgreSQL
-
-# 3. Install dependencies
-uv sync
-
-# 4. Full init: DB migrations + ES index + admin + test data
-python scripts/init_db.py --admin-email admin@museai.local --admin-password dev12345678 --seed-dev
-
-# 5. Start backend
-uv run uvicorn backend.app.main:app --reload
-
-# 6. Start frontend
-cd frontend && npm install && npm run dev
-```
-
-### Manual Alembic Commands
-
-```bash
-# Check current migration status
-uv run alembic current
-
-# Upgrade to latest
-uv run alembic upgrade head
-
-# Rollback one version
-uv run alembic downgrade -1
-
-# View migration history
-uv run alembic history
-```
-
-### Seed Data Scripts
-
-The following standalone seed scripts are available in `scripts/`:
-
-| Script | Purpose | Required Services |
-|--------|---------|-------------------|
-| `seed_dev_user.py` | Create a dev test user | PostgreSQL |
-| `bootstrap_admin.py` | Create/promote admin user | PostgreSQL |
-| `init_exhibits.py` | Seed 70+ exhibits (bronze, ceramics, calligraphy, etc.) | PostgreSQL, Elasticsearch, Ollama |
-| `init_test_data.py` | Full test data (users, documents, chat sessions) | PostgreSQL, Elasticsearch, Ollama |
-| `import_real_exhibits_via_api.py` | Import exhibits via REST API | Full backend running |
-| `cleanup_llm_traces.py` | Clean up expired LLM trace records | PostgreSQL |
-
-## Development
-
-### One-command local verification
-
-```bash
-bash scripts/verify_local_quality.sh
-```
-
-### Run Tests
-
-```bash
-# Unit and contract tests
-uv run pytest backend/tests/unit backend/tests/contract -v
-
-# Single test file
-uv run pytest backend/tests/unit/test_domain_entities.py -v
-
-# E2E tests (requires running infrastructure)
-uv run pytest backend/tests/e2e -v
-```
-
-### Code Quality
-
-```bash
-# Linting
-uv run ruff check backend/
-
-# Type checking
-uv run mypy backend/
-```
-
-### Frontend Development
-
-```bash
-cd frontend
-
-# Development server
-npm run dev
-
-# Production build
-npm run build
-```
-
-## Project Structure
-
-```
-museai/
-├── backend/
-│   ├── app/
-│   │   ├── api/                 # FastAPI routers
-│   │   │   ├── auth.py         # Authentication endpoints
-│   │   │   ├── chat.py         # Chat endpoints
-│   │   │   ├── curator.py      # Curator AI agent endpoints
-│   │   │   ├── documents.py    # Document management
-│   │   │   ├── exhibits.py     # Exhibit browsing
-│   │   │   ├── health.py       # Health checks
-│   │   │   ├── profile.py      # Visitor profile
-│   │   │   ├── tour.py         # Tour session management
-│   │   │   ├── tts.py          # TTS synthesis
-│   │   │   └── admin/          # Admin routers
-│   │   │       ├── documents.py
-│   │   │       ├── exhibits.py
-│   │   │       ├── halls.py
-│   │   │       ├── llm_traces.py
-│   │   │       ├── prompts.py
-│   │   │       └── tts_persona.py
-│   │   ├── application/         # Business logic
-│   │   │   ├── auth_service.py
-│   │   │   ├── chat_service.py
-│   │   │   ├── curator_service.py
-│   │   │   ├── document_service.py
-│   │   │   ├── ingestion_service.py
-│   │   │   ├── tour_*_service.py
-│   │   │   ├── tts_service.py
-│   │   │   ├── llm_trace/      # LLM call tracing
-│   │   │   └── workflows/      # Multi-turn state machine
-│   │   ├── domain/              # Domain entities
-│   │   │   ├── entities.py
-│   │   │   ├── value_objects.py
-│   │   │   └── services/       # RRF fusion
-│   │   ├── infra/              # Infrastructure
-│   │   │   ├── postgres/
-│   │   │   ├── elasticsearch/
-│   │   │   ├── redis/
-│   │   │   ├── cache/          # Prompt cache
-│   │   │   ├── langchain/      # RAG agent, retrievers, curator agent
-│   │   │   ├── providers/      # LLM, embedding, rerank, TTS providers
-│   │   │   └── security/
-│   │   └── main.py
-│   └── tests/
-│       ├── unit/
-│       ├── contract/
-│       └── e2e/
-├── frontend/
-│   ├── src/
-│   │   ├── api/               # API client
-│   │   ├── components/        # Vue components (chat, tour, exhibits, admin, etc.)
-│   │   ├── composables/       # Vue composables (useAuth, useChat, useTour, useTTSPlayer, etc.)
-│   │   ├── design-system/     # Museum design tokens and components
-│   │   ├── views/             # Page views (Home, Tour, Curator, Exhibits, Admin, etc.)
-│   │   ├── router/            # Vue Router configuration
-│   │   ├── styles/            # Global styles
-│   │   └── main.js
-│   └── package.json
-├── scripts/                   # Utility scripts (seed, init, cleanup)
-├── docker/
+# MuseAI 后端
+
+English version: [README_EN.md](./README_EN.md)
+
+MuseAI 后端是面向西安半坡博物馆微信小程序的 FastAPI 服务，负责导览会话、SSE 流式回答、展厅与展品数据、AI 策展路线、游览报告、Reflection Engine、RAG 检索、LLM 调用以及 TTS 语音合成。
+
+## 当前阶段
+
+当前处于 **Stage 13 上线前闭环验证与发布准备**。后端已经支撑小程序的核心体验闭环，但正式上线仍受备案、微信合法域名、真机测试和运维托管流程影响。
+
+## 已实现能力
+
+- 游客导览 session 与 `X-Session-Token`。
+- `/api/v1/tour/sessions/{id}/chat/stream` SSE 流式导览回答。
+- 四类导览身份：
+  - `A` 考古研究员
+  - `B` 研学记录员
+  - `C` 历史追问者
+  - `D` 器物研究员
+- 三步问卷上下文注入：追问方向、初始判断、导览节奏。
+- 展厅 slug 规范化和中文名映射；当前只接受展厅信息导入的 9 个 canonical hall slug。
+- 展厅进入、展厅离开、展品浏览、提问、AI 回答、深挖等事件记录。
+- `/api/v1/curator/plan-tour` AI 策展路线接口。
+- 展品列表、展品详情、按展厅筛选和文字搜索。
+- 游览报告生成：到访展厅、认知变化、记录摘要、基础统计。
+  - 到访展厅只由真实功能使用事件统计：提问、AI 回答、展品浏览和深挖。
+  - 记录摘要按展厅聚合用户问题与 AI 回答，不新增 LLM 调用。
+- Reflection Engine：不新增数据库、不新增 API、不新增模型调用，基于 session/events/report 规则推断认知变化。
+- RAG 链路：query rewrite、Elasticsearch 检索、rerank、文档过滤、流式生成。
+- LLM 分层模型：
+  - `LLM_TOUR_MODEL` 用于普通导览对话。
+  - `LLM_REPORT_MODEL` 用于报告等总结任务。
+  - `LLM_MODEL` 保留为兼容兜底。
+- DeepSeek/Qwen OpenAI-compatible 调用兼容：
+  - DeepSeek 可关闭 thinking。
+  - Qwen/DashScope 可关闭 thinking。
+- 导览对话传递结构化 `conversation_history`，改善连续追问相关性。
+- Redis 或 Elasticsearch 不可用时进入 degraded 模式，避免直接阻断服务启动。
+- `/api/v1/tts/synthesize` TTS 合成接口，当前默认只保留“冰糖”声线，返回可供小程序播放的音频数据。
+
+## 尚未完成或仍需真机验证
+
+- 微信正式小程序备案和 request 合法域名配置。
+- `api.banpo-museai.xyz` 已配置 DNS/SSL 和 Nginx，但未备案前在微信真机环境可能不可用。
+- OCR 识别当前主要在小程序端调用微信能力并回退到展品文字匹配，后端未新增 OCR API。
+- 官方馆方完整展品清单、展品图片、地图、点位和空间布局数据仍需确认。
+- 生产级进程管理、日志轮转和数据库备份策略仍需固化。
+
+## 技术栈
+
+| 模块 | 技术 |
+| --- | --- |
+| API | FastAPI, Pydantic v2 |
+| 运行 | Python 3.11+, uv, Uvicorn |
+| 数据库 | PostgreSQL / SQLAlchemy async |
+| 缓存 | Redis |
+| 检索 | Elasticsearch |
+| RAG | LangChain, LangGraph, 自定义 retriever/filter |
+| LLM | OpenAI-compatible provider |
+| Rerank | SiliconFlow / OpenAI / Cohere / custom / mock |
+| TTS | Xiaomi MiMo 或 mock provider |
+| 测试 | pytest, pytest-asyncio |
+
+## 目录结构
+
+```text
+backend/
+├── backend/app/
+│   ├── api/                 # FastAPI routers
+│   ├── application/         # 应用服务与业务编排
+│   ├── config/              # settings 与环境变量校验
+│   ├── domain/              # 领域异常与实体
+│   ├── infra/               # LLM/RAG/数据库/外部服务适配
+│   ├── observability/       # 日志与追踪上下文
+│   └── main.py              # FastAPI app 入口
+├── backend/tests/
+├── scripts/
 ├── docs/
+├── docker/
 ├── docker-compose.yml
 ├── pyproject.toml
-└── .env.example
+├── .env.example
+├── README.md
+└── README_EN.md
 ```
 
-## RAG Pipeline
+## 关键 API
 
-1. **Query Processing**: User query enters through chat endpoint
-2. **Retrieval**: Dense vector search + BM25 keyword search in parallel
-3. **Fusion**: Reciprocal Rank Fusion (RRF) combines results with source deduplication
-4. **Rerank**: Rerank provider scores and filters results
-5. **Dynamic Filtering**: Absolute/relative gap strategies filter low-quality results
-6. **Chunk Merge**: Parent chunks promoted when child chunks are retrieved (hierarchical)
-7. **Evaluation**: Score threshold check for retrieval quality
-8. **Query Transformation** (if needed): HyDE, Step-back, or Multi-query
-9. **Generation**: LLM generates answer with retrieved context
-10. **Streaming**: Response streamed via SSE (with optional TTS audio events)
+| 功能 | 方法与路径 |
+| --- | --- |
+| 健康检查 | `GET /api/v1/health` |
+| 创建导览会话 | `POST /api/v1/tour/sessions` |
+| 更新导览会话 | `PATCH /api/v1/tour/sessions/{session_id}` |
+| 流式导览回答 | `POST /api/v1/tour/sessions/{session_id}/chat/stream` |
+| 上报导览事件 | `POST /api/v1/tour/sessions/{session_id}/events` |
+| 生成游览报告 | `POST /api/v1/tour/sessions/{session_id}/report` |
+| 策展路线 | `POST /api/v1/curator/plan-tour` |
+| 展品列表 | `GET /api/v1/exhibits` |
+| 展品详情 | `GET /api/v1/exhibits/{id}` |
+| TTS 合成 | `POST /api/v1/tts/synthesize` |
 
-## License
+## 报告与事件契约
 
-MIT License
+报告统计依赖 `tour_events`，前端上报事件必须使用 9 个 canonical hall slug 或对应中文展厅名。后端不再保留历史 slug 兼容映射，无法归一到 9 个展厅的 hall 值会被丢弃。
+
+目前会计入到访展厅的事件类型：
+
+- `exhibit_question`
+- `assistant_answer`
+- `exhibit_view`
+- `exhibit_deep_dive`
+
+这意味着用户只是进入展厅不会被计入 `halls_visited`；只有在该展厅实际使用问答、建议条提问、展品浏览或深挖等功能后，报告才会把该展厅纳入统计。
+
+`POST /api/v1/tour/sessions/{session_id}/events` 的 `metadata` 会持久化到事件的 JSON 字段，报告会从其中提取问题、AI 回答、展品和展厅信息。不要把隐私数据、完整 API key 或用户敏感信息放入 `metadata`。
+
+`POST /api/v1/tour/sessions/{session_id}/report` 当前重点返回：
+
+- `halls_visited`：已归一化的到访展厅 slug 列表。
+- `highlights`：本次导览亮点。
+- `reflection`：Reflection Engine 规则推断出的认知变化。
+- `record_notes`：按展厅合并用户问题和 AI 回答后的记录摘要，供前端直接渲染。
+
+报告生成不新增数据库表、不新增 API、不新增模型调用。`record_notes` 属于规则式摘要，目的是把导览过程沉淀为简短可复盘的笔记，而不是替用户生成冗长报告。
+
+## 环境变量
+
+复制示例配置：
+
+```bash
+cp .env.example .env
+```
+
+关键配置：
+
+```dotenv
+APP_ENV=development
+DATABASE_URL=postgresql+asyncpg://...
+REDIS_URL=redis://localhost:6379/0
+ELASTICSEARCH_URL=http://localhost:9200
+JWT_SECRET=
+
+LLM_PROVIDER=qwen
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_API_KEY=
+LLM_MODEL=qwen-flash
+LLM_TOUR_MODEL=qwen-flash
+LLM_REPORT_MODEL=qwen-plus
+LLM_HEADERS=
+LLM_TEMPERATURE=0.2
+LLM_MAX_TOKENS=800
+LLM_ENABLE_THINKING=false
+LLM_COMPAT_MODE=qwen
+
+RERANK_PROVIDER=siliconflow
+RERANK_API_KEY=
+RERANK_MODEL=BAAI/bge-reranker-v2-m3
+
+TTS_PROVIDER=xiaomi
+TTS_API_KEY=
+TTS_MODEL=mimo-v2.5-tts
+TTS_DEFAULT_VOICE=冰糖
+```
+
+`.env` 不允许提交到仓库。线上修改 `.env` 后必须重启后端进程。
+
+## 本地运行
+
+```bash
+cd backend
+uv sync --extra dev
+uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health
+```
+
+## 测试
+
+常用检查：
+
+```bash
+cd backend
+py -3 -m py_compile backend/app/api/tour.py backend/app/api/curator.py backend/app/api/tts.py backend/app/application/tour_chat_service.py backend/app/application/tour_report_service.py
+py -3 -m py_compile backend/app/application/tour_event_service.py
+uv run --extra dev pytest backend/tests/unit/test_tour_chat.py -q
+uv run --extra dev pytest backend/tests/unit/test_tour_services.py -q
+uv run --extra dev pytest backend/tests/unit/test_tts_core.py backend/tests/unit/test_tts_advanced.py backend/tests/unit/test_voice_description_helpers.py -q
+uv run --extra dev pytest backend/tests/contract/test_tour_api.py -q
+```
+
+全量测试：
+
+```bash
+uv run --extra dev pytest -q
+```
+
+## 服务器部署要点
+
+当前服务器资源口径已调整为 **2 核 / 8 GB RAM**，部署与性能调优按这个预算处理。当前服务器曾采用以下形态：
+
+- Uvicorn 监听 `127.0.0.1:8000`。
+- Nginx 反向代理到后端。
+- 开发调试可通过 `http://122.152.232.190:3000/api/v1`。
+- 正式小程序应使用 `https://api.banpo-museai.xyz/api/v1`，但域名备案和微信后台合法域名通过前不能作为正式真机入口。
+
+2 核 / 8 GB 下的建议：
+
+- 后端优先保持单个 Uvicorn worker，避免 Redis、Elasticsearch、PostgreSQL 与 Python 进程争抢内存。
+- RAG、rerank、TTS 均依赖外部服务，线上应控制并发和超时，优先保证小程序导览流式响应。
+- Elasticsearch、Redis、PostgreSQL 如与后端同机部署，需要持续观察内存占用；数据量增长后优先拆分检索或数据库服务。
+
+服务器更新代码后通常需要：
+
+```bash
+cd ~/MuseAI
+git pull myfork main
+pkill -f "uv run uvicorn backend.app.main:app" || true
+nohup uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 > backend_uvicorn.log 2>&1 &
+sleep 3
+curl -i http://127.0.0.1:8000/api/v1/health
+curl -i https://api.banpo-museai.xyz/api/v1/health
+```
+
+上线前建议改为 systemd 或 Docker Compose 托管，不再依赖手动 `nohup`。
+
+## 上线前阻断项
+
+- 明确小程序备案主体：个人、学校/项目依托单位或博物馆合作主体。
+- 备案通过后，在微信公众平台配置 request/uploadFile/downloadFile 合法域名。
+- 将前端 API 从开发 IP 切到 HTTPS 域名。
+- 重置曾暴露过的 AppSecret 和 API key。
+- 配置 systemd/Docker Compose、日志轮转、数据库备份和回滚流程。
+- 完成 iOS/Android 真机全链路测试：问卷、路线、导览、TTS、OCR、报告。
+
+## 安全注意
+
+- 不提交 `.env`、`.env.backup*`、私钥、AppSecret、LLM key、TTS key。
+- 证书私钥只保留在线上服务器安全目录，权限建议 `600`。
+- 调试日志中不要输出完整 API key、AppSecret、用户 token 或原始隐私数据。

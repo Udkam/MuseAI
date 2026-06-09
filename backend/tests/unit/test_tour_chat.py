@@ -15,8 +15,10 @@ import pytest
 from app.api.tour import TourChatRequest
 from app.application.tour_chat_service import (
     ASSUMPTION_CONTEXTS,
+    CHALLENGE_PROMPTS,
     HALL_DESCRIPTIONS,
     PERSONA_PROMPTS,
+    _stream_rag,
     ask_stream_tour,
     build_system_prompt,
 )
@@ -66,6 +68,13 @@ def _make_mock_tour_session():
     return session
 
 
+def _make_async_session_maker():
+    session_ctx = MagicMock()
+    session_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+    session_ctx.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=session_ctx)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures: Tour Chat Stream
 # ---------------------------------------------------------------------------
@@ -82,11 +91,7 @@ def fake_tour_session():
 
 @pytest.fixture
 def fake_session_maker():
-    session_ctx = AsyncMock()
-    session_ctx.__aenter__.return_value = AsyncMock()
-    session_ctx.__aexit__.return_value = None
-    maker = MagicMock(return_value=session_ctx)
-    return maker
+    return _make_async_session_maker()
 
 
 @pytest.fixture
@@ -115,6 +120,12 @@ def test_build_system_prompt_persona_b():
     prompt = build_system_prompt(persona="B", assumption="B")
     assert PERSONA_PROMPTS["B"] in prompt
     assert ASSUMPTION_CONTEXTS["B"] in prompt
+    assert '不要用"好的"' in prompt
+    assert "自然连接句" in prompt
+    assert "不要使用\"我的分析\"" in prompt
+    assert "\"说明了什么\"" in prompt
+    assert "不要把回答分成重要性、后续观察建议等段落" in prompt
+    assert "Markdown加粗" in prompt
 
 
 def test_build_system_prompt_persona_c():
@@ -123,14 +134,21 @@ def test_build_system_prompt_persona_c():
     assert ASSUMPTION_CONTEXTS["C"] in prompt
 
 
+def test_build_system_prompt_persona_d():
+    prompt = build_system_prompt(persona="D", assumption="D")
+    assert PERSONA_PROMPTS["D"] in prompt
+    assert ASSUMPTION_CONTEXTS["D"] in prompt
+
+
 def test_build_system_prompt_with_hall():
-    prompt = build_system_prompt(persona="A", assumption="A", hall="relic-hall")
-    assert HALL_DESCRIPTIONS["relic-hall"] in prompt
+    prompt = build_system_prompt(persona="A", assumption="A", hall="basic-exhibition-hall")
+    assert HALL_DESCRIPTIONS["basic-exhibition-hall"] in prompt
 
 
 def test_build_system_prompt_with_unknown_hall():
     prompt = build_system_prompt(persona="A", assumption="A", hall="unknown-hall")
-    assert "当前展厅" not in prompt
+    assert "unknown-hall" not in prompt
+    assert "当前展厅：unknown-hall" not in prompt
 
 
 def test_build_system_prompt_with_exhibit_context():
@@ -150,17 +168,63 @@ def test_build_system_prompt_with_visited_exhibits():
     assert "避免重复介绍" in prompt
 
 
+def test_build_system_prompt_with_client_context():
+    prompt = build_system_prompt(
+        persona="B",
+        assumption="D",
+        hall="临展厅二",
+        client_context="当前身份：研学记录员\n当前展厅：临展厅二",
+    )
+    assert "前端导览上下文" in prompt
+    assert "当前身份：研学记录员" in prompt
+    assert "临展厅回答规则" in prompt
+    assert "不要编造当期展品" in prompt
+
+
+def test_build_system_prompt_adds_challenge_only_for_deep_context():
+    plain_prompt = build_system_prompt(persona="D", assumption="D", hall="kiln-hall")
+    assert "反身性融入提示" not in plain_prompt
+
+    deep_prompt = build_system_prompt(
+        persona="D",
+        assumption="D",
+        hall="kiln-hall",
+        exhibit_context="尖底瓶，汲水陶器",
+    )
+    assert "反身性融入提示" in deep_prompt
+    assert "使用场景、操作方式或社会关系" in deep_prompt
+    assert "不要在回答末尾固定追加问题" in deep_prompt
+
+
+def test_build_system_prompt_uses_persona_specific_challenge():
+    student_prompt = build_system_prompt(
+        persona="B",
+        assumption="B",
+        exhibit_context="半地穴式房屋",
+    )
+    artifact_prompt = build_system_prompt(
+        persona="D",
+        assumption="D",
+        exhibit_context="尖底瓶",
+    )
+
+    assert CHALLENGE_PROMPTS["B"] in student_prompt
+    assert CHALLENGE_PROMPTS["D"] in artifact_prompt
+    assert CHALLENGE_PROMPTS["D"] not in student_prompt
+    assert CHALLENGE_PROMPTS["B"] not in artifact_prompt
+
+
 def test_build_system_prompt_all_parts():
     prompt = build_system_prompt(
         persona="B",
         assumption="C",
-        hall="site-hall",
+        hall="site-protection-hall",
         exhibit_context="半地穴式房屋",
         visited_exhibits=["exhibit-1"],
     )
     assert PERSONA_PROMPTS["B"] in prompt
     assert ASSUMPTION_CONTEXTS["C"] in prompt
-    assert HALL_DESCRIPTIONS["site-hall"] in prompt
+    assert HALL_DESCRIPTIONS["site-protection-hall"] in prompt
     assert "半地穴式房屋" in prompt
     assert "exhibit-1" in prompt
 
@@ -171,16 +235,64 @@ def test_build_system_prompt_default_persona():
 
 
 def test_persona_prompts_have_all_keys():
-    assert set(PERSONA_PROMPTS.keys()) == {"A", "B", "C"}
+    assert set(PERSONA_PROMPTS.keys()) == {"A", "B", "C", "D"}
 
 
 def test_assumption_contexts_have_all_keys():
-    assert set(ASSUMPTION_CONTEXTS.keys()) == {"A", "B", "C"}
+    assert set(ASSUMPTION_CONTEXTS.keys()) == {"A", "B", "C", "D"}
 
 
 def test_hall_descriptions_have_expected_slugs():
-    assert "relic-hall" in HALL_DESCRIPTIONS
-    assert "site-hall" in HALL_DESCRIPTIONS
+    assert "basic-exhibition-hall" in HALL_DESCRIPTIONS
+    assert "site-protection-hall" in HALL_DESCRIPTIONS
+    assert "kiln-hall" in HALL_DESCRIPTIONS
+    assert "prehistoric-workshop" in HALL_DESCRIPTIONS
+    assert "banpo-girl-sculpture" in HALL_DESCRIPTIONS
+    assert "education-center" in HALL_DESCRIPTIONS
+    assert "peony-garden" in HALL_DESCRIPTIONS
+    assert "temporary-hall-1" in HALL_DESCRIPTIONS
+    assert "temporary-hall-2" in HALL_DESCRIPTIONS
+
+
+@pytest.mark.asyncio
+async def test_stream_rag_preserves_system_prompt_with_prompt_gateway():
+    captured_messages = []
+
+    class Doc:
+        page_content = "参考材料：这里是临展厅通用看展方法。"
+
+    class PromptGateway:
+        async def render(self, key, variables):
+            assert key == "rag_answer_generation"
+            return f"数据库模板\n上下文：{variables['context']}\n问题：{variables['query']}"
+
+    rag_agent = MagicMock()
+    rag_agent.run = AsyncMock(return_value={"documents": [Doc()]})
+    rag_agent.prompt_gateway = PromptGateway()
+
+    llm_provider = MagicMock()
+
+    async def fake_stream(messages):
+        captured_messages.extend(messages)
+        yield "ok"
+
+    llm_provider.generate_stream = fake_stream
+
+    events = []
+    async for event, chunk in _stream_rag(
+        rag_agent,
+        llm_provider,
+        "临展厅应该怎么看？",
+        "系统提示：当前展厅是临展厅二，不要编造当期展品。",
+    ):
+        events.append((event, chunk))
+
+    assert events
+    prompt = "\n".join(m["content"] for m in captured_messages)
+    assert "系统提示：当前展厅是临展厅二" in prompt
+    assert "不要编造当期展品" in prompt
+    assert "数据库模板" in prompt
+    assert "临展厅应该怎么看？" in prompt
 
 
 # ===================================================================
@@ -346,9 +458,7 @@ class TestTourStreamTTSEvents:
         )
 
         db_session = AsyncMock()
-        session_maker = AsyncMock()
-        session_maker.__aenter__ = AsyncMock(return_value=AsyncMock())
-        session_maker.__aexit__ = AsyncMock(return_value=False)
+        session_maker = _make_async_session_maker()
 
         with (
             patch("app.application.tour_chat_service.get_session", return_value=_make_mock_tour_session()),
@@ -392,9 +502,7 @@ class TestTourStreamTTSEvents:
         mock_rag.prompt_gateway = None
 
         db_session = AsyncMock()
-        session_maker = AsyncMock()
-        session_maker.__aenter__ = AsyncMock(return_value=AsyncMock())
-        session_maker.__aexit__ = AsyncMock(return_value=False)
+        session_maker = _make_async_session_maker()
 
         with (
             patch("app.application.tour_chat_service.get_session", return_value=_make_mock_tour_session()),
@@ -442,9 +550,7 @@ class TestTourStreamTTSEvents:
         )
 
         db_session = AsyncMock()
-        session_maker = AsyncMock()
-        session_maker.__aenter__ = AsyncMock(return_value=AsyncMock())
-        session_maker.__aexit__ = AsyncMock(return_value=False)
+        session_maker = _make_async_session_maker()
 
         with (
             patch("app.application.tour_chat_service.get_session", return_value=_make_mock_tour_session()),

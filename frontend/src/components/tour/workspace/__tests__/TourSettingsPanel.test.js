@@ -16,7 +16,7 @@ vi.mock('../../../../composables/useTour.js', () => ({
     completeHall: vi.fn(),
     sendTourMessage: vi.fn(),
     bufferEvent: vi.fn(),
-    personaLabel: { value: '考古队长' },
+    personaLabel: { value: '考古研究员' },
   }),
 }))
 
@@ -69,11 +69,11 @@ describe('TourSettingsPanel', () => {
     expect(wrapper.text()).toContain('术语难度')
   })
 
-  it('renders TTS placeholder section', () => {
+  it('renders TTS preferences section', () => {
     const wrapper = mount(TourSettingsPanel, { global: { stubs: globalStubs } })
 
     expect(wrapper.text()).toContain('语音朗读')
-    expect(wrapper.text()).toContain('即将推出')
+    expect(wrapper.text()).toContain('启用语音朗读')
   })
 
   it('renders reset button', () => {

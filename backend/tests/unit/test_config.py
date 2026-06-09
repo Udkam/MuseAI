@@ -79,6 +79,42 @@ def test_settings_defaults():
     assert settings.EMBEDDING_DIMS == 768
 
 
+def test_settings_llm_model_split_defaults(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_TOUR_MODEL", raising=False)
+    monkeypatch.delenv("LLM_REPORT_MODEL", raising=False)
+
+    from app.config.settings import Settings
+
+    settings = Settings(_env_file=None, ALLOW_INSECURE_DEV_DEFAULTS=True)
+
+    assert settings.LLM_MODEL == "qwen-flash"
+    assert settings.LLM_TOUR_MODEL == "qwen-flash"
+    assert settings.LLM_REPORT_MODEL == "qwen-plus"
+    assert settings.LLM_PROVIDER == "qwen"
+    assert settings.LLM_COMPAT_MODE == "qwen"
+
+
+def test_settings_accepts_qwen_compat_config():
+    from app.config.settings import Settings
+
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        JWT_SECRET="test-secret",
+        LLM_PROVIDER="qwen",
+        LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        LLM_API_KEY="test-key",
+        LLM_MODEL="qwen-flash",
+        LLM_TOUR_MODEL="qwen-flash",
+        LLM_REPORT_MODEL="qwen-plus",
+        LLM_COMPAT_MODE="qwen",
+    )
+
+    assert settings.LLM_PROVIDER == "qwen"
+    assert settings.LLM_COMPAT_MODE == "qwen"
+
+
 def test_settings_validation_embedding_dims():
     from app.config.settings import Settings
 
@@ -145,7 +181,7 @@ def test_settings_warns_admin_emails_deprecated_in_production(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("JWT_SECRET", "a" * 32)
     monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("RERANK_PROVIDER", "")
+    monkeypatch.setenv("RERANK_PROVIDER", "mock")
     monkeypatch.setenv("TTS_ENABLED", "false")
     monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
 
@@ -161,7 +197,7 @@ def test_settings_rejects_wildcard_cors_in_production(monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "a" * 32)
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("CORS_ORIGINS", "*")
-    monkeypatch.setenv("RERANK_PROVIDER", "")
+    monkeypatch.setenv("RERANK_PROVIDER", "mock")
     monkeypatch.setenv("TTS_ENABLED", "false")
 
     from app.config.settings import Settings

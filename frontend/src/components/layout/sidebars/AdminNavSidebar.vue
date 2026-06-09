@@ -1,10 +1,11 @@
 <script setup>
-import { Collection, Document, MapLocation, OfficeBuilding, Cpu, Microphone } from '@element-plus/icons-vue'
+import { Collection, Cpu, Document, MapLocation, Microphone, Monitor, OfficeBuilding } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
 
 const adminItems = [
+  { path: '/admin/overview', label: '小程序闭环', icon: Monitor },
   { path: '/admin/documents', label: '知识库管理', icon: Document },
   { path: '/admin/halls', label: '展厅设置', icon: OfficeBuilding },
   { path: '/admin/exhibits', label: '展品管理', icon: Collection },
@@ -18,7 +19,8 @@ const adminItems = [
 <template>
   <section class="sidebar-section admin-nav-sidebar">
     <header class="sidebar-header">
-      <h3>管理后台</h3>
+      <p>管理后台</p>
+      <h3>半坡导览配置</h3>
     </header>
 
     <el-menu :default-active="route.path" router class="admin-menu">
@@ -32,23 +34,66 @@ const adminItems = [
 
 <style scoped>
 .sidebar-section {
-  padding: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding: 0;
+  background: #ffffff;
 }
 
 .sidebar-header {
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  padding: 22px 18px 18px;
+  border-bottom: 1px solid #dfe6e2;
+  background: #f8faf9;
+}
+
+.sidebar-header p {
+  margin: 0 0 4px;
+  color: #a94c2c;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .sidebar-header h3 {
   margin: 0;
-  font-size: var(--font-size-h4);
+  font-size: 20px;
+  line-height: 1.25;
+  color: #202725;
+  letter-spacing: 0;
 }
 
 .admin-menu {
+  flex: 1;
   border-right: 0;
+  background: transparent;
+  padding: 10px 8px 16px;
+  overflow-y: auto;
+}
+
+.admin-menu :deep(.el-menu-item) {
+  height: 42px;
+  margin: 3px 0;
+  border-radius: 6px;
+  color: #46514e;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.admin-menu :deep(.el-menu-item .el-icon) {
+  color: #6f7e78;
+}
+
+.admin-menu :deep(.el-menu-item:hover) {
+  background: #edf5f1;
+  color: #202725;
+}
+
+.admin-menu :deep(.el-menu-item.is-active) {
+  background: #496f60;
+  color: #ffffff;
+}
+
+.admin-menu :deep(.el-menu-item.is-active .el-icon) {
+  color: #ffffff;
 }
 </style>

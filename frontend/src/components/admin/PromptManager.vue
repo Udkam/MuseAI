@@ -22,15 +22,24 @@ const editForm = ref({
   content: '',
   change_reason: ''
 })
+const CANONICAL_TTS_KEYS = new Set([
+  'tour_tts_persona_a',
+  'tour_tts_persona_b',
+  'tour_tts_persona_c',
+  'tour_tts_persona_d'
+])
 
 // Category labels
 const categoryLabels = {
   rag: 'RAG',
-  curator: '策展人',
+  curator: 'AI 策展路线',
   narrative: '叙事生成',
   query_transform: '查询转换',
-  reflection: '反思提示',
-  narrative_style: '叙事风格'
+  reflection: '认知变化',
+  narrative_style: '叙事风格',
+  report: '游览报告',
+  tour: '导览对话',
+  tts: '语音人设'
 }
 
 // Computed
@@ -53,7 +62,9 @@ async function fetchPrompts() {
   try {
     const result = await api.admin.prompts.list()
     if (result.ok) {
-      prompts.value = result.data.prompts || []
+      prompts.value = (result.data.prompts || []).filter((prompt) => {
+        return prompt.category !== 'tts' || CANONICAL_TTS_KEYS.has(prompt.key)
+      })
     } else {
       ElMessage.error(result.data?.detail || '获取提示词列表失败')
     }
@@ -218,7 +229,7 @@ onMounted(fetchPrompts)
           {{ formatDate(row.updated_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="220">
         <template #default="{ row }">
           <el-button type="primary" size="small" @click="openEditDrawer(row)">
             <el-icon><Edit /></el-icon>

@@ -1,11 +1,17 @@
 # backend/app/api/curator.py
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
+from loguru import logger
 from pydantic import BaseModel
 
-from app.api.deps import OptionalUser, RateLimitDep, SessionDep
-from app.application.curator_service import CuratorService
+from app.api.deps import GuestRateLimitDep, OptionalUser, RateLimitDep, SessionDep
+from app.application.curator_service import (
+    CuratorService,
+    build_structured_route,
+    format_route_plan_text,
+)
 from app.application.error_handling import sanitize_error_message
 from app.application.exhibit_service import ExhibitService
 from app.application.profile_service import ProfileService
@@ -22,12 +28,32 @@ class PlanTourRequest(BaseModel):
     interests: list[str] | None = None
 
 
+class PlanTourRouteStep(BaseModel):
+    order: int
+    hall_slug: str
+    hall_name: str
+    title: str
+    reason: str
+    focus: str
+    estimated_minutes: int
+    suggested_questions: list[str]
+
+
+class PlanTourRoute(BaseModel):
+    source: Literal["curator"]
+    total_minutes: int
+    theme: str
+    summary: str
+    steps: list[PlanTourRouteStep]
+
+
 class PlanTourResponse(BaseModel):
     user_id: str
     available_time: int
     interests: list[str]
     visited_exhibit_ids: list[str]
     plan: str
+    route: PlanTourRoute
     session_id: str
 
 
@@ -115,20 +141,54 @@ async def plan_tour(
     request: PlanTourRequest,
     current_user: OptionalUser,
     http_request: Request,
-    _: RateLimitDep,
+    _: GuestRateLimitDep,
 ) -> PlanTourResponse:
     """Plan a museum tour based on available time and interests.
 
     Supports both authenticated users and guests.
     Guests get a temporary profile that won't persist.
     """
-    service = await get_curator_service(session, http_request)
     user_id = get_user_id(current_user)
+    interests = request.interests or []
+    persona_hint = next(
+        (item for item in interests if str(item).startswith(("persona:", "personaId:"))),
+        "",
+    )
+    logger.info(
+        "[curator] plan request guest={} available_time={} interests={} persona_hint={}",
+        current_user is None,
+        request.available_time,
+        len(interests),
+        persona_hint,
+    )
+    if current_user is None:
+        route = build_structured_route(request.available_time, interests)
+        logger.info(
+            "[curator] plan response source=guest_rule route_steps={} theme={}",
+            len(route.get("steps", [])),
+            route.get("theme", ""),
+        )
+        return PlanTourResponse(
+            user_id=user_id,
+            available_time=request.available_time,
+            interests=interests,
+            visited_exhibit_ids=[],
+            plan=format_route_plan_text(route),
+            route=route,
+            session_id="",
+        )
+
+    service = await get_curator_service(session, http_request)
 
     result = await service.plan_tour(
         user_id=user_id,
         available_time=request.available_time,
         interests=request.interests,
+    )
+    logger.info(
+        "[curator] plan response source=curator route_steps={} plan_chars={}",
+        len((result.get("route") or {}).get("steps", [])),
+        len(result.get("plan") or ""),
     )
 
     return PlanTourResponse(**result)

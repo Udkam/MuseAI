@@ -159,6 +159,27 @@ async def test_create_tour_session_authenticated(override_dependencies, auth_tok
 
 
 @pytest.mark.asyncio
+async def test_create_tour_session_persona_d(override_dependencies):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/tour/sessions",
+            json={
+                "interest_type": "D",
+                "persona": "D",
+                "assumption": "D",
+                "guest_id": "guest-artifact-test",
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["interest_type"] == "D"
+    assert data["persona"] == "D"
+    assert data["assumption"] == "D"
+
+
+@pytest.mark.asyncio
 async def test_create_tour_session_returns_existing(override_dependencies, auth_token):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -313,7 +334,7 @@ async def test_patch_tour_session(override_dependencies):
 
     assert patch_resp.status_code == 200
     data = patch_resp.json()
-    assert data["current_hall"] == "relic-hall"
+    assert data["current_hall"] == "basic-exhibition-hall"
     assert data["status"] == "touring"
 
 
@@ -412,7 +433,7 @@ async def test_list_tour_events(override_dependencies):
     assert "events" in data
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "hall_enter"
-    assert data["events"][0]["hall"] == "relic-hall"
+    assert data["events"][0]["hall"] == "basic-exhibition-hall"
 
 
 @pytest.mark.asyncio
@@ -445,7 +466,7 @@ async def test_complete_hall(override_dependencies):
 
     assert complete_resp.status_code == 200
     data = complete_resp.json()
-    assert "relic-hall" in data["visited_halls"]
+    assert "basic-exhibition-hall" in data["visited_halls"]
     assert data["all_halls_visited"] is False
     assert data["status"] == "touring"
 
@@ -467,26 +488,28 @@ async def test_complete_hall_all_visited(override_dependencies):
         session_id = created["id"]
         token = created["session_token"]
 
-        await client.patch(
-            f"/api/v1/tour/sessions/{session_id}",
-            json={"current_hall": "relic-hall", "status": "touring"},
-            headers={"X-Session-Token": token},
-        )
-        await client.post(
-            f"/api/v1/tour/sessions/{session_id}/complete-hall",
-            headers={"X-Session-Token": token},
-        )
+        fallback_halls = [
+            "basic-exhibition-hall",
+            "site-protection-hall",
+            "kiln-hall",
+        ]
 
-        await client.patch(
-            f"/api/v1/tour/sessions/{session_id}",
-            json={"current_hall": "site-hall"},
-            headers={"X-Session-Token": token},
-        )
-        complete_resp = await client.post(
-            f"/api/v1/tour/sessions/{session_id}/complete-hall",
-            headers={"X-Session-Token": token},
-        )
+        complete_resp = None
+        for index, hall in enumerate(fallback_halls):
+            await client.patch(
+                f"/api/v1/tour/sessions/{session_id}",
+                json={
+                    "current_hall": hall,
+                    "status": "touring" if index == 0 else None,
+                },
+                headers={"X-Session-Token": token},
+            )
+            complete_resp = await client.post(
+                f"/api/v1/tour/sessions/{session_id}/complete-hall",
+                headers={"X-Session-Token": token},
+            )
 
+    assert complete_resp is not None
     assert complete_resp.status_code == 200
     data = complete_resp.json()
     assert data["all_halls_visited"] is True
@@ -548,7 +571,67 @@ async def test_generate_tour_report(override_dependencies):
     assert "identity_tags" in data
     assert "radar_scores" in data
     assert "one_liner" in data
+    assert "reflection" in data
+    assert data["reflection"]["initial_assumption"]
+    assert data["reflection"]["change_summary"]
     assert data["report_theme"] == "archaeology"
+
+
+@pytest.mark.asyncio
+async def test_generate_tour_report_counts_halls_with_question_activity(override_dependencies):
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value="半坡记录完成")
+
+    app.dependency_overrides[original_get_llm_provider] = lambda: mock_llm
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post(
+            "/api/v1/tour/sessions",
+            json={
+                "interest_type": "B",
+                "persona": "B",
+                "assumption": "A",
+                "guest_id": "guest-report-hall-stats",
+            },
+        )
+        created = create_resp.json()
+        session_id = created["id"]
+        token = created["session_token"]
+
+        await client.patch(
+            f"/api/v1/tour/sessions/{session_id}",
+            json={"current_hall": "prehistoric-workshop", "status": "touring"},
+            headers={"X-Session-Token": token},
+        )
+        await client.post(
+            f"/api/v1/tour/sessions/{session_id}/events",
+            json={
+                "events": [
+                    {"event_type": "hall_enter", "hall": "basic-exhibition-hall"},
+                    {
+                        "event_type": "exhibit_question",
+                        "hall": "prehistoric-workshop",
+                        "metadata": {"message": "这里适合怎么做研学记录？"},
+                    },
+                ]
+            },
+            headers={"X-Session-Token": token},
+        )
+        report_resp = await client.post(
+            f"/api/v1/tour/sessions/{session_id}/report",
+            headers={"X-Session-Token": token},
+        )
+
+    app.dependency_overrides.pop(original_get_llm_provider, None)
+
+    assert report_resp.status_code == 200
+    data = report_resp.json()
+    assert data["halls_visited"] == ["prehistoric-workshop"]
+    assert data["record_notes"]
+    assert data["record_notes"][0]["question"] == "游览记录摘要"
+    assert "这里适合怎么做研学记录" in data["record_notes"][0]["point"]
+    assert "研学记录员" in data["record_notes"][0]["point"]
 
 
 @pytest.mark.asyncio

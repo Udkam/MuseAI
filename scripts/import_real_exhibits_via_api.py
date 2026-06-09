@@ -28,25 +28,74 @@ class HallSpec:
 
 HALL_SPECS: dict[str, HallSpec] = {
     "civilization": HallSpec(
-        slug="civilization-spark-hall",
-        name="文明曙光展厅",
+        slug="basic-exhibition-hall",
+        name="基本陈列展厅",
         floor=1,
-        description="《文明曙光里的火种》相关展品与史前生活主题。",
+        description="以半坡遗址考古发现与研究成果为主线，系统呈现半坡文化的生活形态、生产方式与社会结构。",
         display_order=10,
     ),
     "pottery": HallSpec(
-        slug="pottery-spirit-hall",
-        name="陶器灵肉展厅",
-        floor=2,
-        description="《陶器上的灵与肉》相关展品与符号艺术主题。",
-        display_order=20,
+        slug="basic-exhibition-hall",
+        name="基本陈列展厅",
+        floor=1,
+        description="以半坡遗址考古发现与研究成果为主线，系统呈现半坡文化的生活形态、生产方式与社会结构。",
+        display_order=10,
     ),
     "archaeology": HallSpec(
-        slug="site-archaeology-hall",
-        name="遗址考古展厅",
-        floor=3,
-        description="遗址剖面、聚落结构与墓葬相关考古遗迹主题。",
+        slug="site-protection-hall",
+        name="遗址保护大厅",
+        floor=1,
+        description="强调原址呈现与保护展示，可观察墓葬、地面圆形房屋、烧制作坊、灶具灶台等关键遗存。",
+        display_order=20,
+    ),
+    "kiln": HallSpec(
+        slug="kiln-hall",
+        name="陶窑展厅",
+        floor=1,
+        description="以“陶器如何被制作出来”为核心叙事，解释制坯、装饰、干燥、入窑烧成等生产流程。",
         display_order=30,
+    ),
+    "temporary_1": HallSpec(
+        slug="temporary-hall-1",
+        name="临展厅一",
+        floor=3,
+        description="承载阶段性专题展览，主题和展品随当期策展内容变化。",
+        display_order=90,
+    ),
+    "temporary_2": HallSpec(
+        slug="temporary-hall-2",
+        name="临展厅二",
+        floor=3,
+        description="与临展厅一共同承担轮换展出，需要按馆方最新展览清单更新内容。",
+        display_order=100,
+    ),
+    "banpo_girl": HallSpec(
+        slug="banpo-girl-sculpture",
+        name="半坡姑娘雕塑",
+        floor=1,
+        description="以“半坡姑娘”为代表形象进行艺术化再现，是观众合影点和半坡人形象记忆入口。",
+        display_order=50,
+    ),
+    "workshop": HallSpec(
+        slug="prehistoric-workshop",
+        name="史前工坊",
+        floor=2,
+        description="把制陶、材料、手作等史前生活知识转化为可参与的互动学习体验。",
+        display_order=40,
+    ),
+    "education": HallSpec(
+        slug="education-center",
+        name="教研中心",
+        floor=2,
+        description="面向青少年和公众教育活动，适合承载研学课程、主题课堂与研究型活动。",
+        display_order=60,
+    ),
+    "peony": HallSpec(
+        slug="peony-garden",
+        name="牡丹园",
+        floor=3,
+        description="以牡丹为核心的园林休憩区域，适合在观展间隙停留并体验季节性自然景观。",
+        display_order=70,
     ),
 }
 
@@ -187,7 +236,11 @@ def delete_all_halls(base_url: str, token: str) -> int:
 
 
 def ensure_halls(base_url: str, token: str) -> None:
+    seen_slugs: set[str] = set()
     for spec in HALL_SPECS.values():
+        if spec.slug in seen_slugs:
+            continue
+        seen_slugs.add(spec.slug)
         payload = {
             "slug": spec.slug,
             "name": spec.name,
@@ -285,7 +338,7 @@ def parse_reference(reference_path: Path) -> list[dict]:
                     j += 1
 
                 if not is_meta_heading(heading):
-                    hall_spec = HALL_SPECS[section]
+                    hall_spec = HALL_SPECS["kiln"] if "陶窑" in heading else HALL_SPECS[section]
                     exhibits.append(
                         {
                             "name": heading,

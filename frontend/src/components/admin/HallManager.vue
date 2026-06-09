@@ -1,111 +1,99 @@
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { api } from '../../api/index.js'
 import { useAdmin } from '../../composables/useAdmin.js'
-import PlusIcon from '../icons/PlusIcon.vue'
+import {
+  BANPO_HALLS,
+  createHallPayload,
+  getLegacyHallRows,
+  mergeHallsWithContract,
+  normalizeHallSlug,
+} from '../../constants/banpo.js'
 
-const { loading, createHall, updateHall, deleteHall } = useAdmin()
+const { loading, createHall, updateHall } = useAdmin()
 
+const rawHalls = ref([])
 const halls = ref([])
 const tableRef = ref(null)
-const selectedRows = ref([])
-const batchDeleting = ref(false)
+const fetchLoading = ref(false)
+const syncLoading = ref(false)
 const dialogVisible = ref(false)
-const isEditing = ref(false)
 const formRef = ref(null)
 
 const form = ref({
   slug: '',
   name: '',
   description: '',
-  floor: null,
-  estimated_duration_minutes: 30,
-  display_order: 0,
+  floor: 1,
+  estimated_duration_minutes: 20,
+  display_order: 10,
   is_active: true,
 })
 
 const rules = {
-  slug: [{ required: true, message: '请输入展厅标识（slug）', trigger: 'blur' }],
   name: [{ required: true, message: '请输入展厅名称', trigger: 'blur' }],
 }
+
+const pageLoading = computed(() => loading.value || fetchLoading.value || syncLoading.value)
+const legacyRows = computed(() => getLegacyHallRows(rawHalls.value))
+const backendMatchedCount = computed(() => halls.value.filter((hall) => hall.hasBackend).length)
+const activeCount = computed(() => halls.value.filter((hall) => hall.is_active !== false).length)
 
 onMounted(fetchHalls)
 
 async function fetchHalls() {
-  const result = await api.admin.listHalls({ include_inactive: 'true' })
-  if (result.ok) {
-    halls.value = result.data.halls || []
-    selectedRows.value = []
-    await nextTick()
-    tableRef.value?.clearSelection()
-  }
-}
-
-function handleAdd() {
-  isEditing.value = false
-  form.value = {
-    slug: '',
-    name: '',
-    description: '',
-    floor: null,
-    estimated_duration_minutes: 30,
-    display_order: 0,
-    is_active: true,
-  }
-  dialogVisible.value = true
-}
-
-function handleEdit(row) {
-  isEditing.value = true
-  form.value = {
-    slug: row.slug,
-    name: row.name,
-    description: row.description || '',
-    floor: row.floor,
-    estimated_duration_minutes: row.estimated_duration_minutes,
-    display_order: row.display_order,
-    is_active: row.is_active,
-  }
-  dialogVisible.value = true
-}
-
-async function handleDelete(row) {
+  fetchLoading.value = true
   try {
-    await ElMessageBox.confirm(`确定删除展厅 ${row.name} 吗？`, '提示', {
-      type: 'warning',
-    })
-
-    const result = await deleteHall(row.slug)
+    const result = await api.admin.listHalls({ include_inactive: 'true' })
     if (result.ok) {
-      ElMessage.success('删除成功')
-      fetchHalls()
+      const records = result.data.halls || []
+      rawHalls.value = records
+      halls.value = mergeHallsWithContract(records)
+      await nextTick()
+      tableRef.value?.clearSelection?.()
     } else {
-      ElMessage.error(result.data?.detail || '删除失败')
+      ElMessage.error(result.data?.detail || '获取展厅失败')
     }
-  } catch {
-    // canceled
+  } finally {
+    fetchLoading.value = false
   }
 }
 
-function handleSelectionChange(selection) {
-  selectedRows.value = selection
+function findBackendHall(canonicalSlug) {
+  return rawHalls.value.find((hall) => normalizeHallSlug(hall.slug || hall.hall || hall.hall_slug) === canonicalSlug)
 }
 
-async function handleBatchDelete() {
-  if (!selectedRows.value.length) return
+async function syncOneHall(row) {
+  const payload = createHallPayload(row.contract || row)
+  const current = findBackendHall(payload.slug)
+  const { slug, ...updatePayload } = payload
+  const result = current
+    ? await updateHall(current.slug || payload.slug, updatePayload)
+    : await createHall(payload)
+
+  if (result.ok) {
+    ElMessage.success(`${payload.name} 已同步`)
+    await fetchHalls()
+  } else {
+    ElMessage.error(result.data?.detail || `${payload.name} 同步失败`)
+  }
+}
+
+async function syncAllHalls() {
+  syncLoading.value = true
+  let successCount = 0
+  let failedCount = 0
 
   try {
-    await ElMessageBox.confirm(`确定删除已选中的 ${selectedRows.value.length} 个展厅吗？`, '批量删除确认', {
-      type: 'warning',
-    })
+    for (const hall of BANPO_HALLS) {
+      const payload = createHallPayload(hall)
+      const current = findBackendHall(payload.slug)
+      const { slug, ...updatePayload } = payload
+      const result = current
+        ? await updateHall(current.slug || payload.slug, updatePayload)
+        : await createHall(payload)
 
-    batchDeleting.value = true
-    let successCount = 0
-    let failedCount = 0
-
-    for (const row of selectedRows.value) {
-      const result = await deleteHall(row.slug)
       if (result.ok) {
         successCount += 1
       } else {
@@ -115,131 +103,169 @@ async function handleBatchDelete() {
 
     await fetchHalls()
 
-    if (failedCount === 0) {
-      ElMessage.success(`批量删除成功，共删除 ${successCount} 个展厅`)
+    if (failedCount) {
+      ElMessage.warning(`已同步 ${successCount} 个展厅，${failedCount} 个失败`)
     } else {
-      ElMessage.warning(`已删除 ${successCount} 个展厅，${failedCount} 个删除失败`)
+      ElMessage.success(`已同步 ${successCount} 个半坡展厅`)
     }
-  } catch {
-    // canceled
   } finally {
-    batchDeleting.value = false
+    syncLoading.value = false
   }
+}
+
+function handleEdit(row) {
+  form.value = {
+    slug: row.slug,
+    name: row.name,
+    description: row.description || '',
+    floor: row.floor || 1,
+    estimated_duration_minutes: row.estimated_duration_minutes || 20,
+    display_order: row.display_order || 0,
+    is_active: row.is_active !== false,
+  }
+  dialogVisible.value = true
 }
 
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  const payload = {
-    slug: form.value.slug,
-    name: form.value.name,
-    description: form.value.description || null,
-    floor: form.value.floor,
-    estimated_duration_minutes: form.value.estimated_duration_minutes,
-    display_order: form.value.display_order,
-    is_active: form.value.is_active,
-  }
-
-  const result = isEditing.value
-    ? await updateHall(form.value.slug, {
-      name: payload.name,
-      description: payload.description,
-      floor: payload.floor,
-      estimated_duration_minutes: payload.estimated_duration_minutes,
-      display_order: payload.display_order,
-      is_active: payload.is_active,
-    })
-    : await createHall(payload)
+  const { slug, ...payload } = form.value
+  const current = findBackendHall(slug)
+  const result = current
+    ? await updateHall(current.slug || slug, payload)
+    : await createHall({ slug, ...payload })
 
   if (result.ok) {
-    ElMessage.success(isEditing.value ? '更新成功' : '创建成功')
+    ElMessage.success('展厅已保存')
     dialogVisible.value = false
-    fetchHalls()
+    await fetchHalls()
   } else {
-    ElMessage.error(result.data?.detail || '操作失败')
+    ElMessage.error(result.data?.detail || '保存失败')
   }
 }
 </script>
 
 <template>
   <div class="hall-manager">
-    <div class="toolbar">
-      <el-button type="primary" @click="handleAdd">
-        <el-icon><PlusIcon /></el-icon>
-        添加展厅
-      </el-button>
-      <el-button
-        type="danger"
-        plain
-        :loading="batchDeleting"
-        :disabled="batchDeleting || !selectedRows.length"
-        @click="handleBatchDelete"
-      >
-        批量删除 ({{ selectedRows.length }})
-      </el-button>
-    </div>
+    <header class="admin-hero">
+      <div>
+        <span class="kicker">小程序契约</span>
+        <h2>半坡展厅设置</h2>
+        <p>这里维护的是小程序、路线、报告和展品搜索共用的 canonical hall slug。当前只保留展厅信息导入的 9 个展厅。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button :loading="fetchLoading" @click="fetchHalls">刷新</el-button>
+        <el-button type="primary" :loading="syncLoading" @click="syncAllHalls">同步半坡展厅契约</el-button>
+      </div>
+    </header>
+
+    <section class="stat-grid">
+      <div class="stat-card">
+        <span>契约展厅</span>
+        <strong>{{ BANPO_HALLS.length }}</strong>
+      </div>
+      <div class="stat-card">
+        <span>后端已匹配</span>
+        <strong>{{ backendMatchedCount }}</strong>
+      </div>
+      <div class="stat-card">
+        <span>当前启用</span>
+        <strong>{{ activeCount }}</strong>
+      </div>
+      <div class="stat-card warn">
+        <span>契约外记录</span>
+        <strong>{{ legacyRows.length }}</strong>
+      </div>
+    </section>
+
+    <el-alert
+      v-if="legacyRows.length"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="legacy-alert"
+      title="检测到契约外展厅记录"
+    >
+      <template #default>
+        <div class="legacy-list">
+          <span v-for="item in legacyRows" :key="item.slug">
+            {{ item.name || item.slug }}，请点击“同步半坡展厅契约”清理
+          </span>
+        </div>
+      </template>
+    </el-alert>
 
     <el-table
       ref="tableRef"
       :data="halls"
       row-key="slug"
-      v-loading="loading"
-      border
-      @selection-change="handleSelectionChange"
+      v-loading="pageLoading"
+      class="contract-table"
     >
-      <el-table-column type="selection" width="50" reserve-selection />
-      <el-table-column prop="name" label="展厅名称" min-width="160" />
-      <el-table-column prop="slug" label="标识" min-width="150" />
-      <el-table-column prop="floor" label="楼层" width="90" />
-      <el-table-column prop="estimated_duration_minutes" label="建议时长(分)" width="120" />
-      <el-table-column prop="display_order" label="排序" width="90" />
-      <el-table-column label="启用" width="90">
+      <el-table-column label="展厅" min-width="300">
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'info'">
-            {{ row.is_active ? '是' : '否' }}
+          <div class="hall-cell">
+            <span class="hall-icon">{{ row.icon }}</span>
+            <div>
+              <div class="hall-name">{{ row.name }}</div>
+              <div class="hall-desc">{{ row.description }}</div>
+              <div class="hall-tags">
+                <el-tag size="small" effect="plain">{{ row.type }}</el-tag>
+                <el-tag size="small" type="info" effect="plain">{{ row.zone }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="slug" label="canonical slug" min-width="190" />
+      <el-table-column prop="floor" label="楼层" width="90" />
+      <el-table-column prop="estimated_duration_minutes" label="建议时长" width="110">
+        <template #default="{ row }">{{ row.estimated_duration_minutes }} 分钟</template>
+      </el-table-column>
+      <el-table-column prop="display_order" label="排序" width="90" />
+      <el-table-column label="状态" width="130">
+        <template #default="{ row }">
+          <el-tag :type="findBackendHall(row.slug) ? 'success' : 'warning'" effect="plain">
+            {{ findBackendHall(row.slug) ? '已入库' : '待同步' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="180">
         <template #default="{ row }">
-          <el-button type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-          <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+          <el-button size="small" @click="handleEdit(row)">编辑</el-button>
+          <el-button type="primary" size="small" plain @click="syncOneHall(row)">同步</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isEditing ? '编辑展厅' : '添加展厅'"
-      width="640px"
-    >
+    <el-dialog v-model="dialogVisible" title="编辑展厅基础信息" width="640px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
-        <el-form-item label="展厅标识" prop="slug">
-          <el-input v-model="form.slug" :disabled="isEditing" placeholder="例如 relic-hall" />
+        <el-form-item label="展厅 slug">
+          <el-input v-model="form.slug" disabled />
         </el-form-item>
         <el-form-item label="展厅名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item label="简介">
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
-        <el-row :gutter="20">
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="楼层">
-              <el-input-number v-model="form.floor" :min="1" :max="10" />
+              <el-input-number v-model="form.floor" :min="1" :max="5" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="建议时长(分)">
-              <el-input-number v-model="form.estimated_duration_minutes" :min="1" :max="480" />
+            <el-form-item label="建议时长">
+              <el-input-number v-model="form.estimated_duration_minutes" :min="1" :max="120" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="20">
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="排序">
-              <el-input-number v-model="form.display_order" :min="0" :max="100000" />
+              <el-input-number v-model="form.display_order" :min="0" :max="999" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -251,7 +277,7 @@ async function handleSubmit() {
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button type="primary" :loading="loading" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -259,13 +285,135 @@ async function handleSubmit() {
 
 <style scoped>
 .hall-manager {
-  padding: 20px;
+  min-height: 100%;
+  padding: 28px 34px 52px;
+  background: linear-gradient(180deg, #fffdf9 0%, #f8f2ea 100%);
 }
 
-.toolbar {
-  margin-bottom: 20px;
+.admin-hero {
   display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding: 24px;
+  border: 1px solid rgba(126, 91, 65, 0.16);
+  border-radius: 16px;
+  background: #fffaf3;
+  box-shadow: 0 14px 36px rgba(77, 49, 31, 0.07);
+}
+
+.kicker {
+  color: #c57548;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-hero h2 {
+  margin: 8px 0;
+  color: #2f2118;
+  font-size: 28px;
+}
+
+.admin-hero p {
+  max-width: 720px;
+  margin: 0;
+  color: #7e6a59;
+  line-height: 1.7;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: flex-start;
   gap: 10px;
+  white-space: nowrap;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.stat-card {
+  padding: 18px;
+  border: 1px solid rgba(126, 91, 65, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 252, 247, 0.9);
+}
+
+.stat-card span {
+  color: #957c67;
+  font-size: 13px;
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #35261c;
+  font-size: 28px;
+}
+
+.stat-card.warn strong {
+  color: #b66c45;
+}
+
+.legacy-alert {
+  margin-bottom: 18px;
+}
+
+.legacy-list {
+  display: flex;
   flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.contract-table {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hall-cell {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.hall-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #f1e4d4;
+  font-size: 22px;
+  flex: 0 0 auto;
+}
+
+.hall-name {
+  color: #2f2118;
+  font-weight: 700;
+}
+
+.hall-desc {
+  margin-top: 4px;
+  color: #7b6758;
+  line-height: 1.5;
+}
+
+.hall-tags {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+@media (max-width: 960px) {
+  .admin-hero {
+    flex-direction: column;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

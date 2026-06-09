@@ -3,6 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.application.tour_report_service import (
+    _generate_one_liner_llm,
+    aggregate_stats,
+    build_reflection_summary,
     calculate_radar_scores,
     detect_ceramic_question,
     get_report_theme,
@@ -11,6 +14,7 @@ from app.application.tour_report_service import (
 from app.domain.entities import TourSession
 from app.domain.exceptions import TourSessionExpired, TourSessionNotFound, TourSessionTokenMismatch
 from app.domain.value_objects import TourSessionId
+from app.infra.providers.llm import LLMResponse
 from app.infra.postgres.models import TourEventModel, TourSessionModel
 
 
@@ -387,6 +391,38 @@ async def test_record_events_empty():
 
 
 @pytest.mark.asyncio
+async def test_record_events_skips_existing_client_event_id():
+    from app.application.tour_event_service import record_events
+
+    mock_session = AsyncMock()
+    mock_session.commit.return_value = None
+    mock_session.refresh.return_value = None
+    existing = _make_event_model(event_meta={"client_event_id": "dup-1"})
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [existing]
+    mock_session.execute.return_value = mock_result
+
+    events_data = [
+        {
+            "event_type": "exhibit_question",
+            "hall": "basic-exhibition-hall",
+            "metadata": {"client_event_id": "dup-1", "message": "重复问题"},
+        },
+        {
+            "event_type": "exhibit_question",
+            "hall": "basic-exhibition-hall",
+            "metadata": {"client_event_id": "new-1", "message": "新问题"},
+        },
+    ]
+
+    result = await record_events(mock_session, "session-1", events_data)
+
+    assert len(result) == 1
+    assert mock_session.add.call_count == 1
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_get_events_by_session():
     from app.application.tour_event_service import get_events_by_session
 
@@ -574,8 +610,140 @@ def test_select_identity_tags_all_S():
 
 def test_get_report_theme():
     assert get_report_theme("A") == "archaeology"
-    assert get_report_theme("B") == "village"
-    assert get_report_theme("C") == "homework"
+    assert get_report_theme("B") == "field_study"
+    assert get_report_theme("C") == "history_inquiry"
+    assert get_report_theme("D") == "artifact_study"
+
+
+def test_aggregate_stats_dedupes_retried_question_events():
+    session = _make_session(started_at=datetime.now(UTC) - timedelta(minutes=5))
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={
+                "client_event_id": "q-1",
+                "message": "半坡的石器和骨器是做什么用的？",
+                "is_ceramic_question": True,
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={
+                "client_event_id": "q-1",
+                "message": "半坡的石器和骨器是做什么用的？",
+                "is_ceramic_question": True,
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={"message": "半坡的石器和骨器是做什么用的？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={"message": "半坡的石器和骨器是做什么用的？"},
+        ).to_entity(),
+    ]
+
+    stats = aggregate_stats(events, session)
+
+    assert stats["total_questions"] == 2
+    assert stats["ceramic_questions"] == 1
+
+
+def test_reflection_summary_detects_interest_shift():
+    session = _make_session(persona="D", assumption="D")
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="site-protection-hall",
+            event_meta={"message": "半坡聚落的布局怎样反映社会组织？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="site-protection-hall",
+            event_meta={"message": "壕沟和房屋分布能说明共同体规则吗？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_deep_dive",
+            hall="site-protection-hall",
+            event_meta={"exhibit_name": "地面圆形房屋遗迹"},
+        ).to_entity(),
+    ]
+
+    reflection = build_reflection_summary(session, events)
+
+    assert reflection["status"] == "shifted"
+    assert "器物工艺" in reflection["change_summary"]
+    assert "聚落空间" in reflection["change_summary"] or "社会组织" in reflection["change_summary"]
+
+
+def test_reflection_summary_detects_stable_focus():
+    session = _make_session(persona="D", assumption="D")
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="kiln-hall",
+            event_meta={"message": "陶器烧制工艺有哪些证据？"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            event_meta={"message": "彩陶纹饰和器形能说明什么用途？"},
+        ).to_entity(),
+    ]
+
+    reflection = build_reflection_summary(session, events)
+
+    assert reflection["status"] == "stable"
+    assert "器物工艺" in reflection["observed_focus"]
+
+
+def test_reflection_summary_insufficient_evidence():
+    session = _make_session(persona="C", assumption="C")
+    events = [
+        _make_event_model(event_type="hall_enter", hall="basic-exhibition-hall").to_entity(),
+    ]
+
+    reflection = build_reflection_summary(session, events)
+
+    assert reflection["status"] == "insufficient"
+    assert reflection["confidence"] == 0.35
+    assert "证据不足" in reflection["change_summary"]
+
+
+@pytest.mark.asyncio
+async def test_generate_one_liner_uses_report_model_override():
+    llm_provider = AsyncMock()
+    llm_provider.supports_model_override = True
+    llm_provider.report_model = "deepseek-v4-pro"
+    llm_provider.generate.return_value = LLMResponse(
+        content="从器物细节看见半坡生活",
+        model="deepseek-v4-pro",
+        prompt_tokens=10,
+        completion_tokens=8,
+        duration_ms=100,
+    )
+
+    result = await _generate_one_liner_llm(
+        llm_provider,
+        "D",
+        {
+            "total_duration_minutes": 30,
+            "total_questions": 2,
+            "total_exhibits_viewed": 1,
+        },
+    )
+
+    assert result == "从器物细节看见半坡生活"
+    _, kwargs = llm_provider.generate.call_args
+    assert kwargs["model"] == "deepseek-v4-pro"
+    messages = llm_provider.generate.call_args.args[0]
+    assert isinstance(messages, list)
+    assert messages[0]["role"] == "user"
 
 
 # ===================================================================

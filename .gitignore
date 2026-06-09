@@ -1,5 +1,6 @@
 docs/reference/**
 .env
+.env.backup.*
 
 # Python
 __pycache__/
@@ -22,6 +23,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+package-lock.json
 
 # Virtual environments
 .venv/
@@ -31,6 +33,7 @@ env/
 
 # uv
 .uv/
+.uv-cache/
 uv.lock
 
 # IDE
@@ -59,6 +62,7 @@ htmlcov/
 
 # Logs
 logs/
+backend_uvicorn.log
 
 # Performance test reports (keep directory structure but ignore generated reports)
 performance_reports/*.html

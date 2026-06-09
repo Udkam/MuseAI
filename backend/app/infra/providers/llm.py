@@ -14,6 +14,37 @@ from pydantic import BaseModel
 from app.config.settings import Settings
 from app.domain.exceptions import LLMError
 
+LLM_COMPAT_MODES = {"auto", "openai", "deepseek", "qwen"}
+
+
+def detect_compat_mode(
+    base_url: str,
+    model: str,
+    provider: str | None = None,
+    explicit: str | None = None,
+) -> str:
+    requested = (explicit or "auto").strip().lower()
+    if requested in LLM_COMPAT_MODES and requested != "auto":
+        return requested
+
+    haystack = " ".join([base_url or "", model or "", provider or ""]).lower()
+    if "dashscope" in haystack or "aliyuncs" in haystack or "qwen" in haystack:
+        return "qwen"
+    if "deepseek" in haystack:
+        return "deepseek"
+    return "openai"
+
+
+def build_extra_body_for_compat(compat_mode: str, enable_thinking: bool) -> dict[str, Any]:
+    if enable_thinking:
+        return {}
+    mode = compat_mode.strip().lower()
+    if mode == "qwen":
+        return {"enable_thinking": False}
+    if mode == "deepseek":
+        return {"thinking": {"type": "disabled"}}
+    return {}
+
 
 class LLMResponse(BaseModel):
     content: str
@@ -24,9 +55,13 @@ class LLMResponse(BaseModel):
 
 
 class LLMProvider(Protocol):
-    async def generate(self, messages: list[dict[str, Any]]) -> LLMResponse: ...
+    async def generate(self, messages: list[dict[str, Any]], model: str | None = None) -> LLMResponse: ...
 
-    def generate_stream(self, messages: list[dict[str, Any]]) -> AsyncGenerator[str, None]: ...
+    def generate_stream(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+    ) -> AsyncGenerator[str, None]: ...
 
 
 class OpenAICompatibleProvider:
@@ -40,11 +75,24 @@ class OpenAICompatibleProvider:
         retry_delay: float = 1.0,
         default_headers: dict[str, str] | None = None,
         trace_recorder: Any | None = None,
+        temperature: float = 0.5,
+        max_tokens: int = 2048,
+        enable_thinking: bool = False,
+        compat_mode: str = "auto",
+        provider_name: str = "openai_compatible",
     ):
         self.base_url = base_url
         self.model = model
+        self.provider_name = provider_name
+        self.compat_mode = detect_compat_mode(base_url, model, provider_name, compat_mode)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.enable_thinking = enable_thinking
+        self.supports_model_override = True
+        self.tour_model = model
+        self.report_model = model
         self.client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
@@ -64,10 +112,23 @@ class OpenAICompatibleProvider:
         return cls(
             base_url=settings.LLM_BASE_URL,
             api_key=settings.LLM_API_KEY,
-            model=settings.LLM_MODEL,
+            model=getattr(settings, "LLM_TOUR_MODEL", None) or settings.LLM_MODEL,
             default_headers=default_headers,
             trace_recorder=trace_recorder,
+            temperature=settings.LLM_TEMPERATURE,
+            max_tokens=settings.LLM_MAX_TOKENS,
+            enable_thinking=settings.LLM_ENABLE_THINKING,
+            compat_mode=getattr(settings, "LLM_COMPAT_MODE", "auto"),
+            provider_name=getattr(settings, "LLM_PROVIDER", "openai_compatible"),
+        )._with_purpose_models(
+            tour_model=getattr(settings, "LLM_TOUR_MODEL", None) or settings.LLM_MODEL,
+            report_model=getattr(settings, "LLM_REPORT_MODEL", None) or settings.LLM_MODEL,
         )
+
+    def _with_purpose_models(self, tour_model: str, report_model: str) -> Self:
+        self.tour_model = tour_model
+        self.report_model = report_model
+        return self
 
     async def __aenter__(self) -> Self:
         return self
@@ -108,15 +169,24 @@ class OpenAICompatibleProvider:
                 body=getattr(error, "body", None),
             )
 
-    async def generate(self, messages: list[dict[str, Any]]) -> LLMResponse:
+    async def generate(self, messages: list[dict[str, Any]], model: str | None = None) -> LLMResponse:
         start_time = time.time()
         last_error: APIError | None = None
         call_id = f"llm-{uuid.uuid4().hex[:12]}"
         started_at = datetime.now(UTC)
+        request_model = model or self.model
+
+        extra_body = build_extra_body_for_compat(self.compat_mode, self.enable_thinking)
 
         for attempt in range(self.max_retries):
             try:
-                response = await self.client.chat.completions.create(model=self.model, messages=messages)  # type: ignore[arg-type]
+                response = await self.client.chat.completions.create(  # type: ignore[arg-type]
+                    model=request_model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens if self.max_tokens > 0 else None,
+                    extra_body=extra_body or None,
+                )
                 duration_ms = int((time.time() - start_time) * 1000)
                 ended_at = datetime.now(UTC)
 
@@ -131,12 +201,12 @@ class OpenAICompatibleProvider:
                 if self.trace_recorder is not None:
                     await self.trace_recorder.record_call_once(
                         call_id=call_id,
-                        provider="openai-compatible",
-                        model=self.model,
+                        provider=f"openai-compatible:{self.compat_mode}",
+                        model=request_model,
                         status="success",
                         source="openai-compatible",
                         base_url=self.base_url,
-                        request_payload={"model": self.model, "messages": messages},
+                        request_payload={"model": request_model, "messages": messages},
                         response_payload={
                             "model": response.model,
                             "choices": [{"message": {"content": content}}],
@@ -178,12 +248,25 @@ class OpenAICompatibleProvider:
             )
         raise LLMError(str(last_error)) from last_error
 
-    async def generate_stream(self, messages: list[dict[str, Any]]) -> AsyncGenerator[str, None]:
+    async def generate_stream(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+    ) -> AsyncGenerator[str, None]:
         call_id = f"llm-{uuid.uuid4().hex[:12]}"
         started_at = datetime.now(UTC)
         chunks: list[str] = []
+        request_model = model or self.model
+        extra_body = build_extra_body_for_compat(self.compat_mode, self.enable_thinking)
         try:
-            stream = await self.client.chat.completions.create(model=self.model, messages=messages, stream=True)  # type: ignore[arg-type]
+            stream = await self.client.chat.completions.create(  # type: ignore[arg-type]
+                model=request_model,
+                messages=messages,
+                stream=True,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens if self.max_tokens > 0 else None,
+                extra_body=extra_body or None,
+            )
             async for chunk in stream:  # type: ignore[union-attr]
                 if not chunk.choices:
                     continue
@@ -195,12 +278,12 @@ class OpenAICompatibleProvider:
             if self.trace_recorder is not None:
                 await self.trace_recorder.record_call_once(
                     call_id=call_id,
-                    provider="openai-compatible",
-                    model=self.model,
+                    provider=f"openai-compatible:{self.compat_mode}",
+                    model=request_model,
                     status="success",
                     source="openai-compatible",
                     base_url=self.base_url,
-                    request_payload={"model": self.model, "messages": messages},
+                    request_payload={"model": request_model, "messages": messages},
                     response_payload={"content": "".join(chunks)},
                     started_at=started_at,
                     ended_at=ended_at,

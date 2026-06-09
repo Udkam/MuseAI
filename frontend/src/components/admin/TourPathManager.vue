@@ -1,213 +1,377 @@
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
-import { useAdmin } from '../../composables/useAdmin.js'
+import { computed, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { api } from '../../api/index.js'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import PlusIcon from '../icons/PlusIcon.vue'
-import { EmptyState } from '../../design-system/components/index.js'
+import {
+  BANPO_PERSONAS,
+  BANPO_ROUTE_STRATEGIES,
+  getHallDisplayName,
+} from '../../constants/banpo.js'
 
-const { loading, createTourPath, updateTourPath, deleteTourPath } = useAdmin()
+const activePersona = ref('D')
+const manualRoutes = ref([])
+const loading = ref(false)
 
-const tourPaths = ref([])
-const tableRef = ref(null)
-const selectedRows = ref([])
-const batchDeleting = ref(false)
-const dialogVisible = ref(false)
-const isEditing = ref(false)
-const formRef = ref(null)
+const currentPersona = computed(() => BANPO_PERSONAS.find((persona) => persona.code === activePersona.value))
+const currentRoute = computed(() => BANPO_ROUTE_STRATEGIES[activePersona.value])
+const totalMinutes = computed(() => currentRoute.value?.steps.reduce((sum, step) => sum + step.minutes, 0) || 0)
 
-const form = ref({
-  name: '',
-  description: '',
-  exhibit_ids: [],
-  estimated_duration: 60
-})
+onMounted(fetchManualRoutes)
 
-const rules = {
-  name: [{ required: true, message: '请输入路线名称', trigger: 'blur' }]
-}
-
-onMounted(fetchTourPaths)
-
-async function fetchTourPaths() {
-  const result = await api.admin.listTourPaths()
-  if (result.ok) {
-    tourPaths.value = result.data.tour_paths || result.data || []
-    selectedRows.value = []
-    await nextTick()
-    tableRef.value?.clearSelection()
-  }
-}
-
-function handleAdd() {
-  isEditing.value = false
-  form.value = {
-    name: '',
-    description: '',
-    exhibit_ids: [],
-    estimated_duration: 60
-  }
-  dialogVisible.value = true
-}
-
-function handleEdit(row) {
-  isEditing.value = true
-  form.value = { ...row }
-  dialogVisible.value = true
-}
-
-async function handleDelete(row) {
+async function fetchManualRoutes() {
+  loading.value = true
   try {
-    await ElMessageBox.confirm('确定要删除这个路线吗？', '提示', {
-      type: 'warning'
-    })
-    const result = await deleteTourPath(row.id)
+    const result = await api.admin.listTourPaths()
     if (result.ok) {
-      ElMessage.success('删除成功')
-      fetchTourPaths()
+      manualRoutes.value = result.data.tour_paths || result.data || []
     } else {
-      ElMessage.error(result.data?.detail || '删除失败')
+      manualRoutes.value = []
     }
   } catch {
-    // Cancelled
-  }
-}
-
-function handleSelectionChange(selection) {
-  selectedRows.value = selection
-}
-
-async function handleBatchDelete() {
-  if (!selectedRows.value.length) return
-
-  try {
-    await ElMessageBox.confirm(`确定删除已选中的 ${selectedRows.value.length} 条路线吗？`, '批量删除确认', {
-      type: 'warning',
-    })
-
-    batchDeleting.value = true
-    let successCount = 0
-    let failedCount = 0
-
-    for (const row of selectedRows.value) {
-      const result = await deleteTourPath(row.id)
-      if (result.ok) {
-        successCount += 1
-      } else {
-        failedCount += 1
-      }
-    }
-
-    await fetchTourPaths()
-
-    if (failedCount === 0) {
-      ElMessage.success(`批量删除成功，共删除 ${successCount} 条路线`)
-    } else {
-      ElMessage.warning(`已删除 ${successCount} 条路线，${failedCount} 条删除失败`)
-    }
-  } catch {
-    // Cancelled
+    ElMessage.warning('人工路线接口暂不可用，当前展示本地兜底契约')
   } finally {
-    batchDeleting.value = false
-  }
-}
-
-async function handleSubmit() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-
-  const result = isEditing.value
-    ? await updateTourPath(form.value.id, form.value)
-    : await createTourPath(form.value)
-
-  if (result.ok) {
-    ElMessage.success(isEditing.value ? '更新成功' : '创建成功')
-    dialogVisible.value = false
-    fetchTourPaths()
-  } else {
-    ElMessage.error(result.data?.detail || '操作失败')
+    loading.value = false
   }
 }
 </script>
 
 <template>
   <div class="tour-path-manager">
-    <div class="toolbar">
-      <el-button type="primary" @click="handleAdd">
-        <el-icon><PlusIcon /></el-icon>
-        添加路线
-      </el-button>
-      <el-button
-        type="danger"
-        plain
-        :loading="batchDeleting"
-        :disabled="batchDeleting || !selectedRows.length"
-        @click="handleBatchDelete"
-      >
-        批量删除 ({{ selectedRows.length }})
-      </el-button>
-    </div>
+    <header class="admin-hero">
+      <div>
+        <span class="kicker">路线契约</span>
+        <h2>AI 策展路线与本地兜底</h2>
+        <p>小程序路线页优先调用 <code>/curator/plan-tour</code> 生成结构化路线。这里展示与小程序 <code>route.js</code> 完全一致的 9 站本地兜底路线，用于网络失败、接口异常或人工验收时保持体验完整。</p>
+      </div>
+      <el-button :loading="loading" @click="fetchManualRoutes">刷新人工路线</el-button>
+    </header>
 
-    <EmptyState v-if="!tourPaths.length" title="暂无路线数据" description="先创建一条导览路线。">
-      <el-button type="primary" @click="handleAdd">添加第一条路线</el-button>
-    </EmptyState>
-
-    <el-table
-      v-else
-      ref="tableRef"
-      :data="tourPaths"
-      row-key="id"
-      v-loading="loading"
-      border
-      @selection-change="handleSelectionChange"
+    <el-alert
+      type="info"
+      :closable="false"
+      show-icon
+      class="route-alert"
+      title="不会覆盖小程序 AI 路线"
     >
-      <el-table-column type="selection" width="50" reserve-selection />
-      <el-table-column prop="name" label="路线名称" min-width="150" />
-      <el-table-column prop="description" label="描述" min-width="200" />
-      <el-table-column prop="estimated_duration" label="预计时长(分钟)" width="120" />
-      <el-table-column prop="exhibit_count" label="展品数量" width="100" />
-      <el-table-column label="操作" width="150" fixed="right">
-        <template #default="{ row }">
-          <el-button type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-          <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <!-- Add/Edit Dialog -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isEditing ? '编辑路线' : '添加路线'"
-      width="500px"
-    >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="路线名称" prop="name">
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="预计时长">
-          <el-input-number v-model="form.estimated_duration" :min="30" :max="180" :step="15" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+      <template #default>
+        管理端此页用于查看和校验路线契约。真正的个性化顺序由后端 curator service 根据 persona、时间和问卷兴趣实时生成；本地兜底路线不按身份改顺序。
       </template>
-    </el-dialog>
+    </el-alert>
+
+    <section class="persona-tabs">
+      <button
+        v-for="persona in BANPO_PERSONAS"
+        :key="persona.code"
+        class="persona-tab"
+        :class="{ active: persona.code === activePersona }"
+        @click="activePersona = persona.code"
+      >
+        <span>{{ persona.icon }}</span>
+        <strong>{{ persona.name }}</strong>
+        <small>{{ persona.routeTitle }}</small>
+      </button>
+    </section>
+
+    <section class="route-summary" v-if="currentRoute">
+      <div>
+        <span class="kicker">{{ currentPersona?.focusTitle }}</span>
+        <h3>{{ currentRoute.title }}</h3>
+        <p>{{ currentRoute.summary }}</p>
+      </div>
+      <div class="route-metrics">
+        <div>
+          <strong>{{ currentRoute.steps.length }}</strong>
+          <span>展厅节点</span>
+        </div>
+        <div>
+          <strong>{{ totalMinutes }}</strong>
+          <span>分钟</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="route-steps" v-if="currentRoute">
+      <article v-for="step in currentRoute.steps" :key="step.order" class="route-step">
+        <div class="step-index">{{ step.order }}</div>
+        <div class="step-body">
+          <div class="step-header">
+            <span>第 {{ step.order }} 站</span>
+            <strong>{{ getHallDisplayName(step.hall_slug) }}</strong>
+            <em>约 {{ step.minutes }} 分钟</em>
+          </div>
+          <h4>{{ step.title }}</h4>
+          <p>{{ step.reason }}</p>
+          <div class="focus-box">
+            <span>重点关注</span>
+            <strong>{{ step.focus }}</strong>
+          </div>
+          <div class="step-tags">
+            <span v-for="tag in step.tags" :key="tag">{{ tag }}</span>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="manual-routes">
+      <div class="section-title">
+        <h3>人工路线记录</h3>
+        <span>{{ manualRoutes.length }} 条</span>
+      </div>
+      <el-empty
+        v-if="!manualRoutes.length"
+        description="当前没有单独维护人工路线；小程序会使用 AI 策展路线和 9 站本地兜底路线。"
+      />
+      <el-table v-else :data="manualRoutes" border>
+        <el-table-column prop="name" label="路线名称" min-width="160" />
+        <el-table-column prop="description" label="说明" min-width="260" />
+        <el-table-column prop="estimated_duration" label="时长" width="110">
+          <template #default="{ row }">{{ row.estimated_duration || '-' }} 分钟</template>
+        </el-table-column>
+        <el-table-column prop="exhibit_count" label="展项数" width="100" />
+      </el-table>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .tour-path-manager {
+  min-height: 100%;
+  padding: 28px 34px 56px;
+  background: linear-gradient(180deg, #fffdf9 0%, #f8f2ea 100%);
+}
+
+.admin-hero,
+.route-summary,
+.manual-routes {
+  border: 1px solid rgba(126, 91, 65, 0.16);
+  border-radius: 16px;
+  background: #fffaf3;
+  box-shadow: 0 14px 36px rgba(77, 49, 31, 0.07);
+}
+
+.admin-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.kicker {
+  color: #c57548;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-hero h2,
+.route-summary h3 {
+  margin: 8px 0;
+  color: #2f2118;
+  font-size: 28px;
+}
+
+.admin-hero p,
+.route-summary p {
+  max-width: 760px;
+  margin: 0;
+  color: #7e6a59;
+  line-height: 1.7;
+}
+
+.route-alert {
+  margin-bottom: 18px;
+}
+
+.persona-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.persona-tab {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 18px;
+  border: 1px solid rgba(126, 91, 65, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 252, 247, 0.88);
+  color: #33241b;
+  text-align: left;
+  cursor: pointer;
+}
+
+.persona-tab span {
+  font-size: 26px;
+}
+
+.persona-tab strong {
+  font-size: 17px;
+}
+
+.persona-tab small {
+  color: #937967;
+}
+
+.persona-tab.active {
+  border-color: #c57548;
+  background: #fff6ed;
+  box-shadow: 0 12px 28px rgba(180, 98, 58, 0.12);
+}
+
+.route-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.route-metrics {
+  display: flex;
+  gap: 12px;
+}
+
+.route-metrics div {
+  min-width: 92px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f5eadb;
+}
+
+.route-metrics strong {
+  display: block;
+  color: #2f2118;
+  font-size: 26px;
+}
+
+.route-metrics span {
+  color: #947a64;
+  font-size: 13px;
+}
+
+.route-steps {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.route-step {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 16px;
+}
+
+.step-index {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #d09a63;
+  color: white;
+  font-weight: 800;
+}
+
+.step-body {
+  padding: 20px;
+  border: 1px solid rgba(126, 91, 65, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 252, 247, 0.92);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #9a806b;
+}
+
+.step-header strong {
+  color: #2f2118;
+  font-size: 18px;
+}
+
+.step-header em {
+  margin-left: auto;
+  font-style: normal;
+}
+
+.step-body h4 {
+  margin: 10px 0 6px;
+  color: #2f2118;
+  font-size: 20px;
+}
+
+.step-body p {
+  margin: 0 0 12px;
+  color: #756252;
+  line-height: 1.7;
+}
+
+.focus-box {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-left: 3px solid #c57548;
+  background: #f7efe6;
+}
+
+.focus-box span {
+  color: #c57548;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.focus-box strong {
+  color: #3a2a20;
+}
+
+.step-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.step-tags span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #f2e4d2;
+  color: #a66d49;
+  font-size: 12px;
+}
+
+.manual-routes {
   padding: 20px;
 }
 
-.toolbar {
-  margin-bottom: 20px;
+.section-title {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.section-title h3 {
+  margin: 0;
+  color: #2f2118;
+}
+
+.section-title span {
+  color: #9a806b;
+}
+
+@media (max-width: 1080px) {
+  .persona-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-hero,
+  .route-summary {
+    flex-direction: column;
+  }
 }
 </style>

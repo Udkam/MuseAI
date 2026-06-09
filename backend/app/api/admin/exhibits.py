@@ -10,6 +10,7 @@ from app.api._shared_responses import ExhibitDeleteResponse as DeleteResponse
 from app.api.deps import CurrentAdminUser, SessionDep
 from app.application.content_source import ContentMetadata, ContentSource
 from app.application.exhibit_service import ExhibitService
+from app.application.hall_normalizer import normalize_hall
 from app.application.unified_indexing_service import UnifiedIndexingService
 from app.domain.exceptions import EntityNotFoundError
 from app.infra.postgres.adapters import PostgresExhibitRepository
@@ -86,6 +87,10 @@ def get_exhibit_service(session: SessionDep) -> ExhibitService:
     return ExhibitService(repository)
 
 
+def _normalize_response_hall(value: str | None) -> str:
+    return normalize_hall(value) or value or ""
+
+
 @router.post("", response_model=ExhibitResponse, status_code=status.HTTP_201_CREATED, summary="Create exhibit (admin)")
 async def create_exhibit(
     session: SessionDep,
@@ -102,7 +107,7 @@ async def create_exhibit(
         location_x=request.location_x,
         location_y=request.location_y,
         floor=request.floor,
-        hall=request.hall,
+        hall=_normalize_response_hall(request.hall),
         category=request.category,
         era=request.era,
         importance=request.importance,
@@ -124,7 +129,7 @@ async def create_exhibit(
             metadata=ContentMetadata(
                 name=exhibit.name,
                 category=exhibit.category,
-                hall=exhibit.hall,
+                hall=_normalize_response_hall(exhibit.hall),
                 floor=exhibit.location.floor,
                 era=exhibit.era,
                 importance=exhibit.importance,
@@ -143,7 +148,7 @@ async def create_exhibit(
         location_x=exhibit.location.x,
         location_y=exhibit.location.y,
         floor=exhibit.location.floor,
-        hall=exhibit.hall,
+        hall=_normalize_response_hall(exhibit.hall),
         category=exhibit.category,
         era=exhibit.era,
         importance=exhibit.importance,
@@ -171,11 +176,16 @@ async def list_exhibits(
         skip=skip,
         limit=limit,
         category=category,
-        hall=hall,
+        hall=_normalize_response_hall(hall) if hall else None,
     )
 
     # Get total count for pagination
-    all_exhibits = await service.list_exhibits(skip=0, limit=10000, category=category, hall=hall)
+    all_exhibits = await service.list_exhibits(
+        skip=0,
+        limit=10000,
+        category=category,
+        hall=_normalize_response_hall(hall) if hall else None,
+    )
     total = len(all_exhibits)
 
     return ExhibitListResponse(
@@ -187,7 +197,7 @@ async def list_exhibits(
                 location_x=e.location.x,
                 location_y=e.location.y,
                 floor=e.location.floor,
-                hall=e.hall,
+                hall=_normalize_response_hall(e.hall),
                 category=e.category,
                 era=e.era,
                 importance=e.importance,
@@ -233,7 +243,7 @@ async def update_exhibit(
             location_x=request.location_x,
             location_y=request.location_y,
             floor=request.floor,
-            hall=request.hall,
+            hall=_normalize_response_hall(request.hall) if request.hall is not None else None,
             category=request.category,
             era=request.era,
             importance=request.importance,
@@ -262,7 +272,7 @@ async def update_exhibit(
                 metadata=ContentMetadata(
                     name=exhibit.name,
                     category=exhibit.category,
-                    hall=exhibit.hall,
+                    hall=_normalize_response_hall(exhibit.hall),
                     floor=exhibit.location.floor,
                     era=exhibit.era,
                     importance=exhibit.importance,
@@ -284,7 +294,7 @@ async def update_exhibit(
         location_x=exhibit.location.x,
         location_y=exhibit.location.y,
         floor=exhibit.location.floor,
-        hall=exhibit.hall,
+        hall=_normalize_response_hall(exhibit.hall),
         category=exhibit.category,
         era=exhibit.era,
         importance=exhibit.importance,
@@ -368,7 +378,7 @@ async def reindex_all_exhibits(
                 metadata=ContentMetadata(
                     name=exhibit.name,
                     category=exhibit.category,
-                    hall=exhibit.hall,
+                    hall=_normalize_response_hall(exhibit.hall),
                     floor=exhibit.location.floor,
                     era=exhibit.era,
                     importance=exhibit.importance,

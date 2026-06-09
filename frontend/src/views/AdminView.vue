@@ -8,8 +8,11 @@
   </div>
 </template>
 
-<style scoped>
+<style>
+@import '../styles/admin.css';
+
 .admin-view {
-  height: 100%;
+  min-height: 100%;
+  background: #f5f7f8;
 }
 </style>

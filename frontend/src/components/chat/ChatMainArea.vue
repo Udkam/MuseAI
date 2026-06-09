@@ -35,7 +35,7 @@ const messagesContainer = ref(null)
 // TTS state
 const { isPlaying: ttsPlaying, feedChunk, stop: stopTTS } = useTTSPlayer()
 const ttsEnabled = ref(localStorage.getItem('chat_tts_enabled') === 'true')
-const ttsVoice = ref(localStorage.getItem('chat_tts_voice') || '冰糖')
+const ttsVoice = ref('冰糖')
 const manualTtsPlaying = ref(false)
 
 const currentRagStep = computed(() => {
@@ -131,7 +131,7 @@ async function handleSendMessage() {
   try {
     let fullContent = ''
 
-    const ttsOptions = ttsEnabled.value ? { tts: true, tts_voice: ttsVoice.value } : {}
+    const ttsOptions = ttsEnabled.value ? { tts: true, tts_voice: '冰糖' } : {}
 
     for await (const event of sendMessage(currentSession.value.id, userMessage, ttsOptions)) {
       if (event.type === 'chunk') {

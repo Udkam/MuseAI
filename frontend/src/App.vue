@@ -14,6 +14,7 @@ provide('showAuthModal', (show = true) => {
 
 const route = useRoute()
 const isTourRoute = computed(() => route.path.startsWith('/tour'))
+const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 const sidebarType = computed(() => route.meta?.sidebar ?? null)
 const hasSidebar = computed(() => !!sidebarType.value)
 
@@ -56,13 +57,19 @@ function reloadPage() {
         <AppSidebar :type="sidebarType" />
       </AppDrawer>
 
-      <div class="app-main" :class="{ 'app-main--no-padding': isTourRoute }">
+      <main
+        class="app-main"
+        :class="{
+          'app-main--no-padding': isTourRoute,
+          'app-main--admin': isAdminRoute,
+        }"
+      >
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
-      </div>
+      </main>
     </div>
 
     <AuthModal v-model:visible="showAuthModal" @success="reloadPage" />
@@ -80,6 +87,11 @@ function reloadPage() {
 
 .app-main--no-padding {
   padding: 0;
+}
+
+.app-main--admin {
+  padding: 0;
+  background: #f5f7f8;
 }
 
 .fade-enter-active,

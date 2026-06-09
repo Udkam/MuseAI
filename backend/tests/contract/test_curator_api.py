@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.api.deps import check_rate_limit
+from app.api.deps import check_guest_rate_limit, check_rate_limit
 from app.api.deps import get_db_session as original_get_db_session
 from app.infra.postgres.database import get_session, get_session_maker
 from app.infra.postgres.models import Base
@@ -11,6 +11,37 @@ from app.main import app
 from httpx import ASGITransport, AsyncClient
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+CANONICAL_HALL_SLUGS = {
+    "basic-exhibition-hall",
+    "site-protection-hall",
+    "temporary-hall-1",
+    "temporary-hall-2",
+    "banpo-girl-sculpture",
+    "prehistoric-workshop",
+    "education-center",
+    "peony-garden",
+    "kiln-hall",
+}
+
+
+def _assert_structured_route(data: dict, min_steps: int = 2, max_steps: int = 5) -> dict:
+    assert "route" in data
+    route = data["route"]
+    assert route["source"] == "curator"
+    assert isinstance(route["total_minutes"], int)
+    assert route["theme"]
+    assert route["summary"]
+    assert min_steps <= len(route["steps"]) <= max_steps
+    for index, step in enumerate(route["steps"], start=1):
+        assert step["order"] == index
+        assert step["hall_slug"] in CANONICAL_HALL_SLUGS
+        assert step["hall_name"]
+        assert step["title"]
+        assert step["reason"]
+        assert step["focus"]
+        assert step["estimated_minutes"] > 0
+        assert isinstance(step["suggested_questions"], list)
+    return route
 
 
 @pytest.fixture
@@ -141,6 +172,7 @@ async def test_plan_tour_endpoint(db_session, auth_token):
 
     app.dependency_overrides[original_get_db_session] = override_get_db
     app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
 
     # Mock the CuratorAgent to avoid LLM calls
     mock_result = {
@@ -175,6 +207,7 @@ async def test_plan_tour_endpoint(db_session, auth_token):
             assert data["available_time"] == 120
             assert "interests" in data
             assert "plan" in data
+            _assert_structured_route(data)
             assert "session_id" in data
         finally:
             app.dependency_overrides = {}
@@ -188,6 +221,7 @@ async def test_plan_tour_without_interests(db_session, auth_token):
 
     app.dependency_overrides[original_get_db_session] = override_get_db
     app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
 
     mock_result = {
         "output": "Tour plan based on your profile...",
@@ -216,6 +250,123 @@ async def test_plan_tour_without_interests(db_session, auth_token):
             assert data["available_time"] == 60
             assert "interests" in data
             assert "plan" in data
+            _assert_structured_route(data)
+        finally:
+            app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_plan_tour_allows_guest_without_auth(db_session):
+    """Route planning must work for mini-program guests without a login token."""
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[original_get_db_session] = override_get_db
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
+
+    mock_agent = MagicMock(run=AsyncMock())
+    mock_curator_class = MagicMock()
+    mock_curator_class.create = AsyncMock(return_value=mock_agent)
+
+    with patch("app.api.curator.CuratorAgent", mock_curator_class):
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/curator/plan-tour",
+                    json={
+                        "available_time": 60,
+                        "interests": ["persona:B", "personaId:student"],
+                    },
+                )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["user_id"].startswith("guest-")
+            assert data["visited_exhibit_ids"] == []
+            route = _assert_structured_route(data, min_steps=3, max_steps=3)
+            assert route["theme"] == "研学记录路线"
+            mock_curator_class.create.assert_not_called()
+            mock_agent.run.assert_not_called()
+        finally:
+            app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_plan_tour_persona_d_returns_artifact_route(db_session, auth_token):
+    """Persona D should produce an artifact-oriented structured route."""
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[original_get_db_session] = override_get_db
+    app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
+
+    mock_result = {
+        "output": "Artifact route plan",
+        "session_id": "test-session-artifact",
+    }
+    mock_agent = MagicMock(run=AsyncMock(return_value=mock_result))
+    mock_curator_class = MagicMock()
+    mock_curator_class.create = AsyncMock(return_value=mock_agent)
+
+    with patch("app.api.curator.CuratorAgent", mock_curator_class):
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/curator/plan-tour",
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                    json={
+                        "available_time": 60,
+                        "interests": ["persona:D", "personaId:artifact"],
+                    },
+                )
+
+            assert response.status_code == 200
+            data = response.json()
+            route = _assert_structured_route(data, min_steps=3, max_steps=3)
+            slugs = [step["hall_slug"] for step in route["steps"]]
+            assert "basic-exhibition-hall" in slugs
+            assert "kiln-hall" in slugs
+            assert "prehistoric-workshop" in slugs
+            assert route["theme"] == "器物观察路线"
+            assert "器" in route["summary"]
+        finally:
+            app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_plan_tour_available_time_30_returns_two_steps(db_session, auth_token):
+    """A short time budget should constrain structured route length."""
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[original_get_db_session] = override_get_db
+    app.dependency_overrides[check_rate_limit] = lambda: None
+    app.dependency_overrides[check_guest_rate_limit] = lambda: None
+
+    mock_result = {
+        "output": "Short route plan",
+        "session_id": "test-session-short",
+    }
+    mock_agent = MagicMock(run=AsyncMock(return_value=mock_result))
+    mock_curator_class = MagicMock()
+    mock_curator_class.create = AsyncMock(return_value=mock_agent)
+
+    with patch("app.api.curator.CuratorAgent", mock_curator_class):
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/curator/plan-tour",
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                    json={"available_time": 30, "interests": ["persona:A"]},
+                )
+
+            assert response.status_code == 200
+            route = _assert_structured_route(response.json(), min_steps=2, max_steps=2)
+            assert len(route["steps"]) == 2
         finally:
             app.dependency_overrides = {}
 
