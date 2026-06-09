@@ -630,10 +630,10 @@ async def test_generate_tour_report_counts_halls_with_question_activity(override
     assert data["halls_visited"] == ["prehistoric-workshop"]
     assert data["record_notes"]
     assert data["record_notes"][0]["question"] == "游览记录摘要"
-    assert "这里适合怎么做研学记录" in data["record_notes"][0]["point"]
     assert "研学记录员" in data["record_notes"][0]["point"]
-    assert "为什么这样判断" in data["record_notes"][0]["point"]
-    assert len(data["record_notes"][0]["point"]) > 140
+    assert "关注点：" in data["record_notes"][0]["point"]
+    assert "知识点：" in data["record_notes"][0]["point"]
+    assert len(data["record_notes"][0]["point"]) <= 300
 
 
 @pytest.mark.asyncio

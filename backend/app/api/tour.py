@@ -272,6 +272,53 @@ def _compact_record_text(value: str | None, max_len: int = 90) -> str:
     return text
 
 
+def _append_unique(items: list[str], value: str) -> None:
+    text = str(value or "").strip()
+    if text and text not in items:
+        items.append(text)
+
+
+def _record_focus_phrases(question_text: str, answer_text: str, topic: str) -> list[str]:
+    text = f"{question_text} {answer_text}"
+    phrases: list[str] = []
+    if re.search(r"石器|骨器|工具|用途", text):
+        _append_unique(phrases, "石器骨器用途")
+    if re.search(r"文物|类型|展示|展厅", text):
+        _append_unique(phrases, "文物类型")
+    if re.search(r"动手|体验|技术|制作|步骤", text):
+        _append_unique(phrases, "动手体验与技术理解")
+    if re.search(r"陶|彩陶|陶器|器形|纹饰|工艺|烧制", text):
+        _append_unique(phrases, "器物工艺")
+    if re.search(r"房屋|聚落|遗址|壕沟|布局|半地穴", text):
+        _append_unique(phrases, "聚落空间")
+    if re.search(r"人面|鱼纹|图案|信仰|仪式|观念", text):
+        _append_unique(phrases, "图案与观念")
+    if re.search(r"生活|先民|日常|生产|定居", text):
+        _append_unique(phrases, "半坡生活方式")
+    if not phrases:
+        _append_unique(phrases, topic or "证据线索")
+    return phrases[:4]
+
+
+def _record_knowledge_phrases(answer_text: str, topic: str) -> list[str]:
+    phrases: list[str] = []
+    if re.search(r"石器|骨器|工具", answer_text):
+        _append_unique(phrases, "石器、骨器和工具可对应加工、制作与生产分工")
+    if re.search(r"陶|彩陶|陶器|器形|纹饰|烧制", answer_text):
+        _append_unique(phrases, "陶器可从器形、纹饰和制作痕迹理解用途")
+    if re.search(r"房屋|聚落|遗址|壕沟|半地穴|布局", answer_text):
+        _append_unique(phrases, "房屋、壕沟等遗迹能说明聚落布局")
+    if re.search(r"人面|鱼纹|图案|信仰|仪式|观念", answer_text):
+        _append_unique(phrases, "人面鱼纹等图案关联审美、仪式与观念")
+    if re.search(r"动手|体验|技术|制作|步骤|材料", answer_text):
+        _append_unique(phrases, "动手体验能把材料、步骤和工具关系具体化")
+    if re.search(r"生活|定居|生产|日常|先民", answer_text):
+        _append_unique(phrases, "出土文物反映定居、生产和日常生活方式")
+    if not phrases:
+        _append_unique(phrases, f"{topic or '证据线索'}需要回到展品、展签和遗迹位置核对")
+    return phrases[:3]
+
+
 def _record_point_from_answer(answer: str | None) -> str:
     text = _compact_record_text(answer, 300)
     if not text:
@@ -344,13 +391,13 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
             },
         )
         if event_type == "assistant_answer" and metadata.get("answer"):
-            entry["answer"] = _compact_record_text(metadata.get("answer"), 420)
+            entry["answer"] = _compact_record_text(metadata.get("answer"), 300)
 
     entries = list(entries_by_question.values())
     if not entries:
         return []
 
-    persona_name, frame = _persona_record_frame(persona)
+    persona_name, _frame = _persona_record_frame(persona)
     hall_names = []
     for entry in entries:
         hall_name = hall_display_name(entry["hall"]) if entry["hall"] else ""
@@ -360,12 +407,13 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
     questions_text = "”“".join(entry["question"] for entry in entries[:4])
     answer_text = " ".join(entry["answer"] for entry in entries if entry["answer"])
     topic = _infer_record_topic(" ".join([questions_text, answer_text]))
+    focus_phrases = _record_focus_phrases(questions_text, answer_text, topic)
+    knowledge_phrases = _record_knowledge_phrases(answer_text, topic)
     point = f"以{persona_name}的视角看，本次游览主要围绕{hall_text}展开，关注点落在{topic}。"
-    if questions_text:
-        point += f"你提出的问题包括“{questions_text}”，这些问题已经不只是记录到访，而是在尝试把现场材料转化为判断线索。"
-    if answer_text:
-        point += f"从回答内容看，最值得保留的复盘线索是：{_compact_record_text(answer_text, 520)}。"
-    point += frame
+    point += f"关注点：{'、'.join(focus_phrases)}。"
+    point += f"知识点：{'；'.join(knowledge_phrases)}。"
+    point += "后续可按展品、展签和遗迹位置核对这些判断。"
+    point = _compact_record_text(point, 300)
     return [{"question": "游览记录摘要", "point": point}]
 
 
