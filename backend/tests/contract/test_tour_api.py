@@ -328,7 +328,7 @@ async def test_patch_tour_session(override_dependencies):
 
         patch_resp = await client.patch(
             f"/api/v1/tour/sessions/{session_id}",
-            json={"current_hall": "relic-hall", "status": "touring"},
+            json={"current_hall": "basic-exhibition-hall", "status": "touring"},
             headers={"X-Session-Token": token},
         )
 
@@ -375,13 +375,13 @@ async def test_record_tour_events(override_dependencies):
                     {
                         "event_type": "exhibit_view",
                         "exhibit_id": "exhibit-1",
-                        "hall": "relic-hall",
+                        "hall": "basic-exhibition-hall",
                         "duration_seconds": 120,
                     },
                     {
                         "event_type": "exhibit_question",
                         "exhibit_id": "exhibit-1",
-                        "hall": "relic-hall",
+                        "hall": "basic-exhibition-hall",
                     },
                 ]
             },
@@ -416,7 +416,7 @@ async def test_list_tour_events(override_dependencies):
                 "events": [
                     {
                         "event_type": "hall_enter",
-                        "hall": "relic-hall",
+                        "hall": "basic-exhibition-hall",
                     },
                 ]
             },
@@ -455,7 +455,7 @@ async def test_complete_hall(override_dependencies):
 
         await client.patch(
             f"/api/v1/tour/sessions/{session_id}",
-            json={"current_hall": "relic-hall", "status": "touring"},
+            json={"current_hall": "basic-exhibition-hall", "status": "touring"},
             headers={"X-Session-Token": token},
         )
 
@@ -488,20 +488,30 @@ async def test_complete_hall_all_visited(override_dependencies):
         session_id = created["id"]
         token = created["session_token"]
 
-        fallback_halls = [
+        # "All halls visited" is computed against the full canonical contract,
+        # so completion only flips to True once every canonical hall is visited.
+        canonical_halls = [
             "basic-exhibition-hall",
             "site-protection-hall",
             "kiln-hall",
+            "prehistoric-workshop",
+            "banpo-girl-sculpture",
+            "education-center",
+            "peony-garden",
+            "temporary-hall-1",
+            "temporary-hall-2",
         ]
 
         complete_resp = None
-        for index, hall in enumerate(fallback_halls):
+        for index, hall in enumerate(canonical_halls):
+            # Only set status on the first hall; omit it afterwards (sending an
+            # explicit null would violate the NOT NULL status constraint).
+            patch_body = {"current_hall": hall}
+            if index == 0:
+                patch_body["status"] = "touring"
             await client.patch(
                 f"/api/v1/tour/sessions/{session_id}",
-                json={
-                    "current_hall": hall,
-                    "status": "touring" if index == 0 else None,
-                },
+                json=patch_body,
                 headers={"X-Session-Token": token},
             )
             complete_resp = await client.post(
@@ -637,6 +647,78 @@ async def test_generate_tour_report_counts_halls_with_question_activity(override
 
 
 @pytest.mark.asyncio
+async def test_generate_tour_report_uses_llm_record_summary(override_dependencies):
+    # A clean LLM summary (no template/legacy trigger phrases, <=400 chars).
+    summary = (
+        "你这次在陶窑展厅重点追问了半坡陶器的制作流程，了解到先民通过控制窑温和泥料"
+        "配比来烧制红陶；你也注意到尖底瓶的造型和取水方式之间的关系，并对石器的加工"
+        "痕迹产生了兴趣。"
+    )
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value=summary)
+
+    app.dependency_overrides[original_get_llm_provider] = lambda: mock_llm
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post(
+            "/api/v1/tour/sessions",
+            json={
+                "interest_type": "D",
+                "persona": "D",
+                "assumption": "D",
+                "guest_id": "guest-report-llm-summary",
+            },
+        )
+        created = create_resp.json()
+        session_id = created["id"]
+        token = created["session_token"]
+
+        await client.patch(
+            f"/api/v1/tour/sessions/{session_id}",
+            json={"current_hall": "kiln-hall", "status": "touring"},
+            headers={"X-Session-Token": token},
+        )
+        # A real answered Q&A pair is what unlocks the LLM summary path.
+        await client.post(
+            f"/api/v1/tour/sessions/{session_id}/events",
+            json={
+                "events": [
+                    {
+                        "event_type": "exhibit_question",
+                        "hall": "kiln-hall",
+                        "metadata": {"message": "半坡陶器是怎么烧制的？"},
+                    },
+                    {
+                        "event_type": "assistant_answer",
+                        "hall": "kiln-hall",
+                        "metadata": {
+                            "question": "半坡陶器是怎么烧制的？",
+                            "answer": "半坡人用陶窑控制火候，先制坯再入窑烧成红陶。",
+                        },
+                    },
+                ]
+            },
+            headers={"X-Session-Token": token},
+        )
+        report_resp = await client.post(
+            f"/api/v1/tour/sessions/{session_id}/report",
+            headers={"X-Session-Token": token},
+        )
+
+    app.dependency_overrides.pop(original_get_llm_provider, None)
+
+    assert report_resp.status_code == 200
+    data = report_resp.json()
+    assert data["record_summary"] == summary
+    assert data["record_notes"][0]["question"] == "游览记录摘要"
+    assert data["record_notes"][0]["point"] == summary
+    # Real summary, not the keyword template, and within the 400-char budget.
+    assert "主要留下这些线索：" not in data["record_notes"][0]["point"]
+    assert len(data["record_notes"][0]["point"]) <= 400
+
+
+@pytest.mark.asyncio
 async def test_get_tour_report_not_found(override_dependencies):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -665,12 +747,14 @@ async def test_get_tour_report_not_found(override_dependencies):
 async def test_list_tour_halls(override_dependencies, admin_token):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Tour halls are driven by the canonical Banpo contract; admin hall config
+        # overrides (description/duration) for a canonical slug must flow through.
         create_hall_resp = await client.post(
             "/api/v1/admin/halls",
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
-                "slug": "tour-dynamic-hall",
-                "name": "导览动态展厅",
+                "slug": "kiln-hall",
+                "name": "陶窑展厅",
                 "description": "导览展厅数据应来自统一展厅配置",
                 "estimated_duration_minutes": 40,
                 "is_active": True,
@@ -683,8 +767,13 @@ async def test_list_tour_halls(override_dependencies, admin_token):
     assert response.status_code == 200
     data = response.json()
     assert "halls" in data
-    slugs = [item["slug"] for item in data["halls"]]
-    assert "tour-dynamic-hall" in slugs
+    halls_by_slug = {item["slug"]: item for item in data["halls"]}
+    # Canonical halls are always present...
+    assert "kiln-hall" in halls_by_slug
+    assert "basic-exhibition-hall" in halls_by_slug
+    # ...and the admin override flows into the tour hall config.
+    assert halls_by_slug["kiln-hall"]["description"] == "导览展厅数据应来自统一展厅配置"
+    assert halls_by_slug["kiln-hall"]["estimated_duration_minutes"] == 40
 
 
 @pytest.mark.asyncio

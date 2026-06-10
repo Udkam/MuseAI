@@ -464,6 +464,14 @@ def _format_report(report, tour_session=None, events=None) -> dict:
         if tour_session is not None
         else None
     )
+    record_summary = getattr(report, "record_summary", None)
+    if record_summary:
+        record_notes = [{
+            "question": "游览记录摘要",
+            "point": _compact_record_text(record_summary, 400),
+        }]
+    else:
+        record_notes = _build_report_record_notes(events, getattr(tour_session, "persona", None))
     return {
         "id": (
             report.id.value if hasattr(report.id, "value") else report.id
@@ -488,8 +496,9 @@ def _format_report(report, tour_session=None, events=None) -> dict:
         "radar_scores": report.radar_scores,
         "one_liner": report.one_liner,
         "report_theme": report.report_theme,
+        "record_summary": record_summary,
         "highlights": _build_report_highlights(report, halls_visited),
-        "record_notes": _build_report_record_notes(events, getattr(tour_session, "persona", None)),
+        "record_notes": record_notes,
         "reflection": reflection,
         "created_at": report.created_at.isoformat(),
     }

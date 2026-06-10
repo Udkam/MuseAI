@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,7 +8,9 @@ from app.application.tour_report_service import (
     aggregate_stats,
     build_reflection_summary,
     calculate_radar_scores,
+    collect_qa_pairs,
     detect_ceramic_question,
+    generate_record_summary_llm,
     get_report_theme,
     select_identity_tags,
 )
@@ -744,6 +747,73 @@ async def test_generate_one_liner_uses_report_model_override():
     messages = llm_provider.generate.call_args.args[0]
     assert isinstance(messages, list)
     assert messages[0]["role"] == "user"
+
+
+# ===================================================================
+# Record Summary Tests
+# ===================================================================
+
+def _qa_event(event_type, question="", answer="", hall="kiln-hall"):
+    return SimpleNamespace(
+        event_type=event_type,
+        hall=hall,
+        metadata={"question": question, "answer": answer},
+    )
+
+
+def test_collect_qa_pairs_keeps_only_answered_and_dedupes():
+    events = [
+        _qa_event("exhibit_question", question="半坡陶器怎么烧制？"),
+        _qa_event("assistant_answer", question="半坡陶器怎么烧制？", answer="通过陶窑控制火候烧制。"),
+        # duplicate question (same hall) should merge, not double-count
+        _qa_event("assistant_answer", question="半坡陶器怎么烧制？", answer="（重复）"),
+        # answered question in a different hall
+        _qa_event(
+            "assistant_answer",
+            question="尖底瓶怎么用？",
+            answer="重心设计便于取水。",
+            hall="basic-exhibition-hall",
+        ),
+        # bare question with no answer is dropped
+        _qa_event("exhibit_question", question="还有别的吗？", hall="basic-exhibition-hall"),
+    ]
+
+    pairs = collect_qa_pairs(events)
+
+    assert [p["question"] for p in pairs] == ["半坡陶器怎么烧制？", "尖底瓶怎么用？"]
+    assert pairs[0]["answer"] == "通过陶窑控制火候烧制。"  # first answer wins
+    assert pairs[1]["hall"] == "basic-exhibition-hall"
+
+
+def test_collect_qa_pairs_empty_without_answers():
+    events = [_qa_event("exhibit_question", question="这是什么？")]
+    assert collect_qa_pairs(events) == []
+
+
+@pytest.mark.asyncio
+async def test_generate_record_summary_uses_report_model_and_trims():
+    llm_provider = AsyncMock()
+    llm_provider.supports_model_override = True
+    llm_provider.report_model = "deepseek-v4-pro"
+    # >400 chars, sentence-delimited, to exercise the non-truncating trim
+    llm_provider.generate.return_value = LLMResponse(
+        content="你重点了解了半坡陶器的烧制工艺。" * 40,
+        model="deepseek-v4-pro",
+        prompt_tokens=10,
+        completion_tokens=8,
+        duration_ms=100,
+    )
+
+    result = await generate_record_summary_llm(
+        llm_provider,
+        "D",
+        [{"hall": "kiln-hall", "question": "陶器怎么烧？", "answer": "用陶窑控制火候。"}],
+    )
+
+    assert len(result) <= 400
+    assert result.endswith("。")  # complete sentence, not mid-word cut
+    _, kwargs = llm_provider.generate.call_args
+    assert kwargs["model"] == "deepseek-v4-pro"
 
 
 # ===================================================================

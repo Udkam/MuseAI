@@ -3,6 +3,7 @@
 import pytest
 from app.api.deps import check_auth_rate_limit
 from app.api.deps import get_db_session as original_get_db_session
+from app.application.hall_normalizer import CANONICAL_HALL_SLUGS
 from app.infra.postgres.database import get_session, get_session_maker
 from app.infra.postgres.models import Base
 from app.main import app
@@ -603,7 +604,12 @@ async def test_admin_endpoints_require_auth(db_session):
 
 @pytest.mark.asyncio
 async def test_admin_halls_crud_endpoint(db_session, admin_token):
-    """Test CRUD flow for /api/v1/admin/halls."""
+    """Admin manages the fixed set of 9 canonical Banpo halls.
+
+    The canonical set (slugs/name/floor/duration) is governed by the hall
+    contract and re-synced on every list; admin-authored descriptions are the
+    field that persists across that sync.
+    """
 
     async def override_get_db():
         yield db_session
@@ -614,46 +620,34 @@ async def test_admin_halls_crud_endpoint(db_session, admin_token):
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            create_response = await client.post(
-                "/api/v1/admin/halls",
-                headers={"Authorization": f"Bearer {admin_token}"},
-                json={
-                    "slug": "test-hall-admin-api",
-                    "name": "后台测试展厅",
-                    "description": "用于校验展厅配置统一管理",
-                    "floor": 1,
-                    "estimated_duration_minutes": 28,
-                    "display_order": 50,
-                    "is_active": True,
-                },
-            )
-
-            assert create_response.status_code == 201
-            create_data = create_response.json()
-            assert create_data["slug"] == "test-hall-admin-api"
-            assert create_data["name"] == "后台测试展厅"
-
+            # First list backfills + syncs the canonical halls into the table.
             list_response = await client.get(
                 "/api/v1/admin/halls",
                 headers={"Authorization": f"Bearer {admin_token}"},
             )
             assert list_response.status_code == 200
             list_data = list_response.json()
-            assert "halls" in list_data
-            assert any(h["slug"] == "test-hall-admin-api" for h in list_data["halls"])
+            slugs = {h["slug"] for h in list_data["halls"]}
+            assert "kiln-hall" in slugs
+            assert "basic-exhibition-hall" in slugs
+            assert list_data["total"] >= 9
 
+            # Admin edits a canonical hall's description; it must survive re-sync.
             update_response = await client.put(
-                "/api/v1/admin/halls/test-hall-admin-api",
+                "/api/v1/admin/halls/kiln-hall",
                 headers={"Authorization": f"Bearer {admin_token}"},
-                json={
-                    "name": "后台测试展厅（更新）",
-                    "estimated_duration_minutes": 35,
-                },
+                json={"description": "管理员补充的陶窑展厅说明"},
             )
             assert update_response.status_code == 200
-            update_data = update_response.json()
-            assert update_data["name"] == "后台测试展厅（更新）"
-            assert update_data["estimated_duration_minutes"] == 35
+            assert update_response.json()["description"] == "管理员补充的陶窑展厅说明"
+
+            # Re-list re-syncs the contract; the admin description still persists.
+            relist = await client.get(
+                "/api/v1/admin/halls",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            kiln = next(h for h in relist.json()["halls"] if h["slug"] == "kiln-hall")
+            assert kiln["description"] == "管理员补充的陶窑展厅说明"
     finally:
         app.dependency_overrides = {}
 
@@ -682,8 +676,9 @@ async def test_admin_halls_endpoint_requires_admin(db_session, user_token):
 
 
 @pytest.mark.asyncio
-async def test_admin_halls_list_backfills_from_exhibits_when_empty(db_session, admin_token):
-    """When halls table is empty, /admin/halls should auto-backfill from exhibit hall values."""
+async def test_admin_halls_list_backfills_canonical_when_empty(db_session, admin_token):
+    """When the halls table is empty, /admin/halls backfills the canonical Banpo
+    halls from the hall contract; non-canonical hall values are never introduced."""
 
     async def override_get_db():
         yield db_session
@@ -694,12 +689,13 @@ async def test_admin_halls_list_backfills_from_exhibits_when_empty(db_session, a
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # A non-canonical exhibit hall must NOT leak into the halls list.
             create_response = await client.post(
                 "/api/v1/admin/exhibits",
                 headers={"Authorization": f"Bearer {admin_token}"},
                 json={
                     "name": "来自展品的展厅示例",
-                    "description": "验证 halls 为空时可由 exhibits 兜底回填",
+                    "description": "验证 halls 为空时由统一展厅契约回填",
                     "location_x": 12.0,
                     "location_y": 8.0,
                     "floor": 1,
@@ -720,9 +716,14 @@ async def test_admin_halls_list_backfills_from_exhibits_when_empty(db_session, a
             assert list_response.status_code == 200
 
             data = list_response.json()
-            hall_names = [item["name"] for item in data.get("halls", [])]
+            slugs = [item["slug"] for item in data.get("halls", [])]
 
-            assert data.get("total", 0) >= 1
-            assert "特展馆" in hall_names
+            # Canonical halls were backfilled from the contract...
+            assert data.get("total", 0) >= 9
+            assert "basic-exhibition-hall" in slugs
+            assert "kiln-hall" in slugs
+            # ...and the non-canonical exhibit hall did not create a hall.
+            assert "特展馆" not in [item["name"] for item in data.get("halls", [])]
+            assert all(s in CANONICAL_HALL_SLUGS for s in slugs)
     finally:
         app.dependency_overrides = {}

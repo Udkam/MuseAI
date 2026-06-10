@@ -162,6 +162,7 @@ class TourReportModel(Base):
     radar_scores: Mapped[dict] = mapped_column(JSON, default=dict)
     one_liner: Mapped[str] = mapped_column(Text, nullable=False)
     report_theme: Mapped[str] = mapped_column(String(20), nullable=False)
+    record_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     def to_entity(self):
@@ -182,6 +183,7 @@ class TourReportModel(Base):
             radar_scores=self.radar_scores or {},
             one_liner=self.one_liner,
             report_theme=self.report_theme,
+            record_summary=self.record_summary,
             created_at=self.created_at,
         )
 

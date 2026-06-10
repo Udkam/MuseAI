@@ -394,7 +394,15 @@ class TestCachedTTSProvider:
 class TestListTtsPersonas:
     def test_returns_personas(self):
         app, mock_cache = _create_app()
-        prompts = [_make_prompt("tour_tts_persona_a"), _make_prompt("tour_tts_persona_b")]
+        # The endpoint returns all four canonical personas (a–d), auto-creating
+        # any that are missing. Seed all four so the read path is exercised
+        # without hitting the create branch.
+        prompts = [
+            _make_prompt("tour_tts_persona_a"),
+            _make_prompt("tour_tts_persona_b"),
+            _make_prompt("tour_tts_persona_c"),
+            _make_prompt("tour_tts_persona_d"),
+        ]
 
         with patch("app.api.admin.tts_persona.PostgresPromptRepository") as MockRepo:
             MockRepo.return_value.list_all = AsyncMock(return_value=prompts)
@@ -403,7 +411,7 @@ class TestListTtsPersonas:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["total"] == 2
+        assert data["total"] == 4
         assert data["personas"][0]["voice_description"] == "冰糖美少女声线"
 
 

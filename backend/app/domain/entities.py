@@ -292,3 +292,4 @@ class TourReport:
     one_liner: str
     report_theme: str
     created_at: datetime
+    record_summary: str | None = None

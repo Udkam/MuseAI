@@ -1,3 +1,5 @@
+import asyncio
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -7,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.tour_event_service import get_events_by_session
-from app.application.hall_normalizer import normalize_hall
+from app.application.hall_normalizer import hall_display_name, normalize_hall
 from app.application.tour_session_service import get_session
 from app.domain.entities import TourReport
 from app.infra.postgres.models import TourReportModel
@@ -91,6 +93,19 @@ HALL_TOPIC_WEIGHTS = {
     "education-center": {"evidence": 2},
     "banpo-girl-sculpture": {"spiritual": 1, "social": 1},
     "peony-garden": {"life": 1},
+}
+
+
+RECORD_SUMMARY_MAX_CHARS = 400
+RECORD_SUMMARY_MAX_PAIRS = 12
+RECORD_SUMMARY_ANSWER_CHARS = 320
+RECORD_SUMMARY_QUESTION_CHARS = 120
+
+PERSONA_SUMMARY_NAMES = {
+    "A": "考古研究员",
+    "B": "研学记录员",
+    "C": "历史追问者",
+    "D": "器物研究员",
 }
 
 
@@ -408,12 +423,32 @@ async def generate_report(
     report_theme = get_report_theme(tour_session.persona)
 
     one_liner = existing.one_liner if existing is not None else _pick_one_liner(stats, tour_session.persona)
+    record_summary = existing.record_summary if existing is not None else None
 
-    if existing is None and llm_provider:
-        try:
-            one_liner = await _generate_one_liner_llm(llm_provider, tour_session.persona, stats)
-        except Exception as e:
-            logger.warning(f"Failed to generate one-liner via LLM, using fallback: {e}")
+    # ── LLM enrichment (one-liner + record summary) ─────────────────────────────
+    # Both are independent LLM calls; run them concurrently so report generation
+    # pays one round-trip instead of two. The record summary is only attempted
+    # when we captured answered Q&A — otherwise the API falls back to the keyword
+    # template (no regression). Failures degrade to the non-LLM fallback per task.
+    if llm_provider:
+        qa_pairs = collect_qa_pairs(events) if not record_summary else []
+        tasks: dict[str, Any] = {}
+        if existing is None:
+            tasks["one_liner"] = _generate_one_liner_llm(llm_provider, tour_session.persona, stats)
+        if qa_pairs:
+            tasks["record_summary"] = generate_record_summary_llm(
+                llm_provider, tour_session.persona, qa_pairs
+            )
+        if tasks:
+            outcomes = await asyncio.gather(*tasks.values(), return_exceptions=True)
+            for key, outcome in zip(tasks.keys(), outcomes):
+                if isinstance(outcome, Exception):
+                    logger.warning(f"Failed to generate {key} via LLM, using fallback: {outcome}")
+                    continue
+                if key == "one_liner" and outcome:
+                    one_liner = outcome
+                elif key == "record_summary":
+                    record_summary = outcome or None
 
     if existing is not None:
         existing.total_duration_minutes = stats["total_duration_minutes"]
@@ -428,6 +463,7 @@ async def generate_report(
         existing.radar_scores = radar_scores
         existing.one_liner = one_liner
         existing.report_theme = report_theme
+        existing.record_summary = record_summary
         await session.commit()
         await session.refresh(existing)
         return existing.to_entity()
@@ -448,6 +484,7 @@ async def generate_report(
         radar_scores=radar_scores,
         one_liner=one_liner,
         report_theme=report_theme,
+        record_summary=record_summary,
         created_at=datetime.now(UTC),
     )
     session.add(model)
@@ -466,6 +503,103 @@ async def get_report(session: AsyncSession, tour_session_id: str) -> TourReport 
 def _pick_one_liner(stats: dict, persona: str) -> str:
     import random
     return random.choice(ONE_LINER_CANDIDATES)
+
+
+def _clean_record_text(value: str | None) -> str:
+    """Strip markdown/whitespace noise from recorded question/answer text."""
+    text = str(value or "")
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"[*_`#>]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _trim_summary(text: str, max_chars: int = RECORD_SUMMARY_MAX_CHARS) -> str:
+    """Keep the summary within the budget without cutting mid-sentence."""
+    cleaned = _clean_record_text(text)
+    if len(cleaned) <= max_chars:
+        return cleaned
+    window = cleaned[:max_chars]
+    cut = max(window.rfind(sep) for sep in "。！？；")
+    if cut >= int(max_chars * 0.6):
+        return window[: cut + 1]
+    return window.rstrip("，、；：…. ") + "。"
+
+
+def collect_qa_pairs(events: list) -> list[dict[str, str]]:
+    """Reconstruct ordered visitor↔guide Q&A pairs that actually have answers.
+
+    The frontend records ``assistant_answer`` events carrying both the original
+    question and the AI answer; bare ``exhibit_question`` events seed the entry so
+    a later answer can attach to it. Only pairs with a non-empty answer are kept —
+    a conversation with no answers has nothing to summarize.
+    """
+    entries: dict[str, dict[str, str]] = {}
+    order: list[str] = []
+    for event in events or []:
+        event_type = getattr(event, "event_type", None)
+        if event_type not in {"assistant_answer", "exhibit_question"}:
+            continue
+        metadata = getattr(event, "metadata", None) or {}
+        question = _clean_record_text(
+            metadata.get("question") or metadata.get("message") or metadata.get("query")
+        )
+        if not question:
+            continue
+        hall = normalize_hall(getattr(event, "hall", None) or metadata.get("hall")) or ""
+        key = f"{hall}|{question}"
+        entry = entries.get(key)
+        if entry is None:
+            entry = {"hall": hall, "question": question, "answer": ""}
+            entries[key] = entry
+            order.append(key)
+        if event_type == "assistant_answer":
+            answer = _clean_record_text(metadata.get("answer"))
+            if answer and not entry["answer"]:
+                entry["answer"] = answer
+    return [entries[key] for key in order if entries[key]["answer"]]
+
+
+def _build_summary_prompt(persona: str, qa_pairs: list[dict[str, str]]) -> str:
+    persona_name = PERSONA_SUMMARY_NAMES.get(persona, "考古研究员")
+    lines: list[str] = []
+    for index, pair in enumerate(qa_pairs[:RECORD_SUMMARY_MAX_PAIRS], 1):
+        hall = hall_display_name(pair["hall"]) if pair["hall"] else ""
+        prefix = f"（{hall}）" if hall else ""
+        question = pair["question"][:RECORD_SUMMARY_QUESTION_CHARS]
+        answer = pair["answer"][:RECORD_SUMMARY_ANSWER_CHARS]
+        lines.append(f"{index}. {prefix}游客问：{question}\n   导览答：{answer}")
+    transcript = "\n".join(lines)
+    return (
+        "你正在为一次西安半坡博物馆的AI导览生成「记录摘要」。\n"
+        "以下是本次游客与AI导览员的真实问答记录（按时间顺序）：\n\n"
+        f"{transcript}\n\n"
+        f"请以{persona_name}的视角，把上面这段真实对话提炼成一段连贯的中文「记录摘要」，要求：\n"
+        "1. 必须基于上面真实问答的具体内容，准确写出游客实际关心的问题，"
+        "以及对话中得到的关键信息或结论；不要套用与本次对话无关的通用说辞，也不要编造未提到的展品。\n"
+        "2. 用第二人称「你」称呼游客，像在帮游客复盘这次参观。\n"
+        "3. 输出一段完整的话，不超过400字，必须有完整结尾，"
+        "不要写标题、列表、编号或Markdown符号。\n"
+        "4. 只输出摘要正文本身，不要任何前后缀、引号或解释。"
+    )
+
+
+async def generate_record_summary_llm(
+    llm_provider: Any,
+    persona: str,
+    qa_pairs: list[dict[str, str]],
+) -> str:
+    """Summarize the real tour conversation into a <=400 char record summary."""
+    prompt = _build_summary_prompt(persona, qa_pairs)
+    messages = [{"role": "user", "content": prompt}]
+    model = getattr(llm_provider, "report_model", None)
+    if getattr(llm_provider, "supports_model_override", False) is True and model:
+        result = await llm_provider.generate(messages, model=model)
+    else:
+        result = await llm_provider.generate(messages)
+    content = getattr(result, "content", result)
+    return _trim_summary(str(content or ""))
 
 
 async def _generate_one_liner_llm(llm_provider: Any, persona: str, stats: dict) -> str:

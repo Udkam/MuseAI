@@ -327,19 +327,24 @@ class TestOpenAICompatibleProvider:
         mock_response.usage = None
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        # Setup loguru to capture warnings to a file
+        # Setup loguru to capture warnings to a file. Capture the sink id and
+        # remove it afterwards so the file handle is released before tmp_path
+        # teardown — a leaked sink keeps the temp dir locked and makes pytest's
+        # temp cleanup fail with PermissionError on subsequent (Windows) runs.
         log_file = tmp_path / "test.log"
-        logger.add(str(log_file), level="WARNING", format="{message}")
+        sink_id = logger.add(str(log_file), level="WARNING", format="{message}")
+        try:
+            with patch("app.infra.providers.llm.AsyncOpenAI", return_value=mock_client):
+                provider = OpenAICompatibleProvider(
+                    base_url="https://api.example.com/v1", api_key="test-key", model="gemini-2.5-flash", max_retries=1
+                )
+                messages = [{"role": "user", "content": "Hello"}]
+                result = await provider.generate(messages)
 
-        with patch("app.infra.providers.llm.AsyncOpenAI", return_value=mock_client):
-            provider = OpenAICompatibleProvider(
-                base_url="https://api.example.com/v1", api_key="test-key", model="gemini-2.5-flash", max_retries=1
-            )
-            messages = [{"role": "user", "content": "Hello"}]
-            result = await provider.generate(messages)
-
-        # Read log file and check for warning
-        log_content = log_file.read_text()
+            # Read log file and check for warning
+            log_content = log_file.read_text()
+        finally:
+            logger.remove(sink_id)
         assert result.prompt_tokens == 0
         assert result.completion_tokens == 0
         assert "LLM response usage is None" in log_content
