@@ -424,6 +424,12 @@ async def generate_report(
 
     one_liner = existing.one_liner if existing is not None else _pick_one_liner(stats, tour_session.persona)
     record_summary = existing.record_summary if existing is not None else None
+    previous_question_count = existing.total_questions if existing is not None else None
+    should_refresh_record_summary = (
+        existing is None
+        or not record_summary
+        or previous_question_count != stats["total_questions"]
+    )
 
     # ── LLM enrichment (one-liner + record summary) ─────────────────────────────
     # Both are independent LLM calls; run them concurrently so report generation
@@ -431,7 +437,7 @@ async def generate_report(
     # when we captured answered Q&A — otherwise the API falls back to the keyword
     # template (no regression). Failures degrade to the non-LLM fallback per task.
     if llm_provider:
-        qa_pairs = collect_qa_pairs(events) if not record_summary else []
+        qa_pairs = collect_qa_pairs(events) if should_refresh_record_summary else []
         tasks: dict[str, Any] = {}
         if existing is None:
             tasks["one_liner"] = _generate_one_liner_llm(llm_provider, tour_session.persona, stats)

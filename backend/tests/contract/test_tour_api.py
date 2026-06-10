@@ -719,6 +719,96 @@ async def test_generate_tour_report_uses_llm_record_summary(override_dependencie
 
 
 @pytest.mark.asyncio
+async def test_generate_tour_report_refreshes_record_summary_when_questions_change(override_dependencies):
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(
+        side_effect=[
+            "先从陶器工艺追问半坡生活",
+            "第一次摘要：你在陶窑展厅追问了陶器烧制流程。",
+            "第二次摘要：你继续把问题扩展到窑炉结构与火候控制。",
+        ]
+    )
+
+    app.dependency_overrides[original_get_llm_provider] = lambda: mock_llm
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/v1/tour/sessions",
+                json={
+                    "interest_type": "D",
+                    "persona": "D",
+                    "assumption": "D",
+                    "guest_id": "guest-report-summary-refresh",
+                },
+            )
+            created = create_resp.json()
+            session_id = created["id"]
+            token = created["session_token"]
+
+            await client.post(
+                f"/api/v1/tour/sessions/{session_id}/events",
+                json={
+                    "events": [
+                        {
+                            "event_type": "exhibit_question",
+                            "hall": "kiln-hall",
+                            "metadata": {"message": "半坡陶器是怎么烧制的？"},
+                        },
+                        {
+                            "event_type": "assistant_answer",
+                            "hall": "kiln-hall",
+                            "metadata": {
+                                "question": "半坡陶器是怎么烧制的？",
+                                "answer": "先制坯，再入窑，通过火候控制完成烧成。",
+                            },
+                        },
+                    ]
+                },
+                headers={"X-Session-Token": token},
+            )
+            first_report = await client.post(
+                f"/api/v1/tour/sessions/{session_id}/report",
+                headers={"X-Session-Token": token},
+            )
+            assert first_report.status_code == 200
+            assert first_report.json()["record_summary"] == "第一次摘要：你在陶窑展厅追问了陶器烧制流程。"
+
+            await client.post(
+                f"/api/v1/tour/sessions/{session_id}/events",
+                json={
+                    "events": [
+                        {
+                            "event_type": "exhibit_question",
+                            "hall": "kiln-hall",
+                            "metadata": {"message": "窑炉结构怎样影响火候？"},
+                        },
+                        {
+                            "event_type": "assistant_answer",
+                            "hall": "kiln-hall",
+                            "metadata": {
+                                "question": "窑炉结构怎样影响火候？",
+                                "answer": "窑室、火膛和排烟位置会影响升温、通风与温度分布。",
+                            },
+                        },
+                    ]
+                },
+                headers={"X-Session-Token": token},
+            )
+            second_report = await client.post(
+                f"/api/v1/tour/sessions/{session_id}/report",
+                headers={"X-Session-Token": token},
+            )
+
+        assert second_report.status_code == 200
+        assert second_report.json()["record_summary"] == "第二次摘要：你继续把问题扩展到窑炉结构与火候控制。"
+        assert mock_llm.generate.await_count == 3
+    finally:
+        app.dependency_overrides.pop(original_get_llm_provider, None)
+
+
+@pytest.mark.asyncio
 async def test_get_tour_report_not_found(override_dependencies):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
