@@ -324,6 +324,17 @@ def _append_summary_sentence(parts: list[str], sentence: str, max_len: int = 300
         parts.append(sentence)
 
 
+def _join_record_phrases(phrases: list[str]) -> str:
+    clean = [phrase for phrase in phrases if phrase]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f"{clean[0]}和{clean[1]}"
+    return "、".join(clean[:-1]) + f"和{clean[-1]}"
+
+
 def _build_record_summary_point(
     hall_text: str,
     question_text: str,
@@ -332,11 +343,12 @@ def _build_record_summary_point(
 ) -> str:
     focus_phrases = _record_focus_phrases(question_text, answer_text, topic)
     knowledge_phrases = _record_knowledge_phrases(answer_text, topic)
-    subject = f"{hall_text}的问答" if hall_text and hall_text != "半坡遗址" else "本次问答"
+    subject = f"{hall_text}这段记录" if hall_text and hall_text != "半坡遗址" else "这次参观"
+    focus_text = _join_record_phrases(focus_phrases)
+    knowledge_text = _join_record_phrases(knowledge_phrases)
     parts: list[str] = []
-    _append_summary_sentence(parts, f"{subject}集中在{'、'.join(focus_phrases)}。")
-    _append_summary_sentence(parts, f"回答中可提炼为：{'；'.join(knowledge_phrases)}。")
-    _append_summary_sentence(parts, "这些线索可继续回到展品、展签和遗迹位置核对。")
+    _append_summary_sentence(parts, f"{subject}主要留下这些线索：{knowledge_text}。")
+    _append_summary_sentence(parts, f"提问中的{focus_text}，可在展柜、展签和遗迹位置继续核对。")
     return "".join(parts)
 
 

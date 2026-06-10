@@ -632,7 +632,7 @@ async def test_generate_tour_report_counts_halls_with_question_activity(override
     assert data["record_notes"][0]["question"] == "游览记录摘要"
     assert not data["record_notes"][0]["point"].startswith("以")
     assert "你提出的问题包括" not in data["record_notes"][0]["point"]
-    assert "回答中可提炼为：" in data["record_notes"][0]["point"]
+    assert "主要留下这些线索：" in data["record_notes"][0]["point"]
     assert len(data["record_notes"][0]["point"]) <= 300
 
 
