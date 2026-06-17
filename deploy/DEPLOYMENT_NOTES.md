@@ -22,6 +22,28 @@ HTTPS 证书约定放在 `/etc/nginx/ssl/museai/`：
 
 ---
 
+## 0. 每次拉取代码后的必做步骤
+
+后端模型和数据库 schema 必须一起更新。拉取代码后，先执行 Alembic 迁移，再重启后端：
+
+```bash
+cd /home/ubuntu/MuseAI
+git pull origin main
+uv run alembic upgrade head
+uv run alembic current
+pkill -f "uv run uvicorn backend.app.main:app" || true
+nohup uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 > backend_uvicorn.log 2>&1 &
+```
+
+如果已切换到 systemd，则用：
+
+```bash
+sudo systemctl restart museai-backend
+journalctl -u museai-backend -n 100 --no-pager
+```
+
+报告接口 `POST /api/v1/tour/sessions/:id/report` 和 `GET /api/v1/tour/sessions/:id/report` 同时返回 500，且其他 tour/chat/exhibits 接口正常时，优先检查是否漏跑了迁移。当前报告摘要功能需要 `tour_reports.record_summary` 字段；如果数据库仍是旧 schema，ORM 读写报告表会直接触发 500。
+
 ## 1. 安装 systemd service
 
 ```bash
@@ -31,7 +53,12 @@ which uv          # 例如 /home/ubuntu/.local/bin/uv
 # 2) 如路径不同，编辑 unit 中的 ExecStart / WorkingDirectory / EnvironmentFile
 sudo cp /home/ubuntu/MuseAI/deploy/museai-backend.service /etc/systemd/system/
 
-# 3) 注册并启动
+# 3) 先手工确认迁移可执行
+cd /home/ubuntu/MuseAI
+uv run alembic upgrade head
+uv run alembic current
+
+# 4) 注册并启动
 sudo systemctl daemon-reload
 sudo systemctl enable --now museai-backend
 ```
@@ -40,7 +67,8 @@ sudo systemctl enable --now museai-backend
 
 - 切换到 systemd 前，先停掉手动 nohup 进程：
   `pkill -f "uv run uvicorn backend.app.main:app" || true`
-- `EnvironmentFile` 指向 `backend/.env`。systemd 对该文件解析较严格：值含空格必须加引号、不能有 `export`。应用本身也会通过 pydantic-settings 读取 `.env`，两者保持同一份文件即可。
+- `EnvironmentFile` 指向 `/home/ubuntu/MuseAI/.env`。systemd 对该文件解析较严格：值含空格必须加引号、不能有 `export`。应用本身也会通过 pydantic-settings 读取同一份 `.env`，两者保持一致即可。
+- unit 会在启动前执行 `uv run alembic upgrade head`。没有待执行 revision 时该命令是幂等的；如果迁移失败，服务不会在错误 schema 上启动。
 - 不要给生产 unit 加 `--reload`。
 
 ## 2. 日常操作

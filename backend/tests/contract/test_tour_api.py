@@ -713,9 +713,9 @@ async def test_generate_tour_report_uses_llm_record_summary(override_dependencie
     assert data["record_summary"] == summary
     assert data["record_notes"][0]["question"] == "游览记录摘要"
     assert data["record_notes"][0]["point"] == summary
-    # Real summary, not the keyword template, and within the 400-char budget.
+    # Real summary, not the keyword template, and within the concise summary budget.
     assert "主要留下这些线索：" not in data["record_notes"][0]["point"]
-    assert len(data["record_notes"][0]["point"]) <= 400
+    assert len(data["record_notes"][0]["point"]) <= 260
 
 
 @pytest.mark.asyncio

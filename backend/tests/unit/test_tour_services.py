@@ -702,7 +702,9 @@ def test_reflection_summary_detects_stable_focus():
     reflection = build_reflection_summary(session, events)
 
     assert reflection["status"] == "stable"
-    assert "器物工艺" in reflection["observed_focus"]
+    assert reflection["observed_focus_key"] == "craft"
+    assert reflection["observed_focus"]
+    assert reflection["change_summary"]
 
 
 def test_reflection_summary_insufficient_evidence():
@@ -715,7 +717,9 @@ def test_reflection_summary_insufficient_evidence():
 
     assert reflection["status"] == "insufficient"
     assert reflection["confidence"] == 0.35
-    assert "证据不足" in reflection["change_summary"]
+    assert reflection["observed_focus_key"] is None
+    assert reflection["observed_focus"]
+    assert reflection["change_summary"]
 
 
 @pytest.mark.asyncio
@@ -795,7 +799,7 @@ async def test_generate_record_summary_uses_report_model_and_trims():
     llm_provider = AsyncMock()
     llm_provider.supports_model_override = True
     llm_provider.report_model = "deepseek-v4-pro"
-    # >400 chars, sentence-delimited, to exercise the non-truncating trim
+    # >260 chars, sentence-delimited, to exercise the non-truncating trim
     llm_provider.generate.return_value = LLMResponse(
         content="你重点了解了半坡陶器的烧制工艺。" * 40,
         model="deepseek-v4-pro",
@@ -810,10 +814,32 @@ async def test_generate_record_summary_uses_report_model_and_trims():
         [{"hall": "kiln-hall", "question": "陶器怎么烧？", "answer": "用陶窑控制火候。"}],
     )
 
-    assert len(result) <= 400
+    assert len(result) <= 260
     assert result.endswith("。")  # complete sentence, not mid-word cut
+    assert not result.endswith("；")
     _, kwargs = llm_provider.generate.call_args
     assert kwargs["model"] == "deepseek-v4-pro"
+
+
+@pytest.mark.asyncio
+async def test_generate_record_summary_normalizes_semicolon_ending():
+    llm_provider = AsyncMock()
+    llm_provider.supports_model_override = False
+    llm_provider.generate.return_value = LLMResponse(
+        content="你重点关注了基本陈列展厅中文物类型和石器骨器用途；",
+        model="qwen-plus",
+        prompt_tokens=10,
+        completion_tokens=8,
+        duration_ms=100,
+    )
+
+    result = await generate_record_summary_llm(
+        llm_provider,
+        "B",
+        [{"hall": "basic-exhibition-hall", "question": "有哪些文物？", "answer": "主要包括陶器和工具。"}],
+    )
+
+    assert result == "你重点关注了基本陈列展厅中文物类型和石器骨器用途。"
 
 
 # ===================================================================

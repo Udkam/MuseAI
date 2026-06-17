@@ -26,6 +26,10 @@ WorkingDirectory=/home/ubuntu/MuseAI
 # safety net for values referenced at process start. systemd parses this file
 # strictly: values with spaces must be quoted, no `export` keyword.
 EnvironmentFile=/home/ubuntu/MuseAI/.env
+# Keep PostgreSQL schema in sync with the application before accepting traffic.
+# Alembic is idempotent when no revisions are pending; if a migration fails,
+# the app should not start against a mismatched schema.
+ExecStartPre=/home/ubuntu/.local/bin/uv run alembic upgrade head
 ExecStart=/home/ubuntu/.local/bin/uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=5

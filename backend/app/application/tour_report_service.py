@@ -44,18 +44,57 @@ REFLECTION_TOPIC_LABELS = {
     "evidence": "证据推理",
 }
 
-PERSONA_INITIAL_FOCUS = {
-    "A": ("evidence", "先看证据和推理过程"),
-    "B": ("evidence", "把观察整理成可复盘的研学记录"),
-    "C": ("social", "追问半坡与更大的历史问题"),
-    "D": ("craft", "从器物材料、器形、纹饰和工艺进入半坡"),
+PERSONA_REVIEW_ENTRY = {
+    "A": ("evidence", "本次复盘先按证据链整理：实物、展签和遗迹位置优先于现成结论。"),
+    "B": ("evidence", "本次复盘先按研学笔记整理：保留可回看、可继续追问的现场线索。"),
+    "C": ("social", "本次复盘先按历史问题整理：半坡如何组织共同生活，是主要入口。"),
+    "D": ("craft", "本次复盘先按器物细节整理：材料、器形、纹饰和使用痕迹是主要入口。"),
 }
 
-ASSUMPTION_REFLECTION_TEXTS = {
-    "A": "你起初更关注共同体是否平等互助。",
-    "B": "你起初更关注半坡人的日常生存和生活方式。",
-    "C": "你起初更关注分工、规则和社会组织是否已经出现。",
-    "D": "你起初选择先不下判断，希望跟着证据逐步形成看法。",
+ASSUMPTION_REVIEW_HINTS = {
+    "A": "初始问题偏向共同体：平等、协作和公共生活能否从遗存中看出来。",
+    "B": "初始问题偏向日常生活：房屋、器具和食物怎样连成生活场景。",
+    "C": "初始问题偏向社会组织：分工、规则和群体秩序从哪里显形。",
+    "D": "初始问题偏向证据判断：先保留现场材料，再决定解释能走多远。",
+}
+
+REVIEW_TOPIC_LINES = {
+    "craft": {
+        "focus": "关注点集中在器物如何被制作和使用：陶器、骨器、石器不只是展品，也对应火候、器形、磨损和用途。",
+        "evidence": "可回看{halls}中的器物与展签，把“怎么做、怎么用、留下什么痕迹”连成一条线。",
+        "next": "继续追问同类器物在不同场景中的用途差异，区分哪些判断来自实物，哪些仍是推测。",
+    },
+    "settlement": {
+        "focus": "关注点集中在聚落空间：房屋、壕沟、作坊和墓葬共同说明人群怎样住在一起。",
+        "evidence": "可回看{halls}中的位置关系，重点看居住、生产、边界和公共空间如何相互支撑。",
+        "next": "继续追问空间布局背后的规则：哪些区域属于日常生活，哪些可能承担保护、生产或仪式功能。",
+    },
+    "social": {
+        "focus": "关注点集中在社会组织：协作、分工和公共规则没有直接写出，却能从器物、房屋和墓葬组合中推出来。",
+        "evidence": "可回看{halls}里与工具、墓葬、公共空间相关的线索，比较不同材料之间是否互相印证。",
+        "next": "继续追问半坡人的共同生活如何被组织起来，以及哪些证据足以支持这种判断。",
+    },
+    "spiritual": {
+        "focus": "关注点集中在精神文化：纹饰、图案和象征让器物超出实用层面，留下审美与观念线索。",
+        "evidence": "可回看{halls}中的人面、鱼纹、几何纹或相关图案，观察它们出现的位置和器物类型。",
+        "next": "继续追问图案是装饰、身份标记还是仪式表达，避免只停留在“好看”的判断。",
+    },
+    "life": {
+        "focus": "关注点集中在日常生活：吃什么、住哪里、用什么工具，都能落到具体展品和空间中。",
+        "evidence": "可回看{halls}中的陶器、工具和房屋线索，把它们放回同一个生活场景里理解。",
+        "next": "继续追问这些器物分别服务饮食、居住、劳动还是储藏，补齐生活场景的细节。",
+    },
+    "evidence": {
+        "focus": "关注点集中在证据推理：重要的不是记住结论，而是区分直接可见的材料和合理推断。",
+        "evidence": "可回看{halls}中的展品、展签和遗迹位置，检查每个判断的证据来源。",
+        "next": "继续追问一个判断背后需要哪些证据，并标出仍不确定的部分。",
+    },
+}
+
+INSUFFICIENT_REVIEW_LINES = {
+    "focus": "有效互动还少，暂时不生成判断型总结。",
+    "evidence": "目前只保留展厅到访和少量操作记录；继续提问或查看展品后，复盘线索会更清楚。",
+    "next": "下一次可先选一个展厅或一件展品追问，例如“它有什么用途”“证据在哪里”。",
 }
 
 TOPIC_KEYWORDS = {
@@ -96,7 +135,7 @@ HALL_TOPIC_WEIGHTS = {
 }
 
 
-RECORD_SUMMARY_MAX_CHARS = 400
+RECORD_SUMMARY_MAX_CHARS = 260
 RECORD_SUMMARY_MAX_PAIRS = 12
 RECORD_SUMMARY_ANSWER_CHARS = 320
 RECORD_SUMMARY_QUESTION_CHARS = 120
@@ -177,23 +216,35 @@ def get_report_theme(persona: str) -> str:
     }.get(persona, "archaeology")
 
 
+def _format_review_halls(halls: list[str]) -> str:
+    names: list[str] = []
+    for hall in halls:
+        name = hall_display_name(hall)
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return "相关展厅"
+    return "、".join(names[:3])
+
+
 def build_reflection_summary(
     tour_session,
     events: list,
     stats: dict | None = None,
     radar_scores: dict | None = None,
 ) -> dict[str, Any]:
-    """Infer reflection summary from existing session/events without an LLM call."""
+    """Build report review cues from existing session/events without an LLM call."""
     stats = stats or {}
     radar_scores = radar_scores or {}
     persona = getattr(tour_session, "persona", None) or "A"
     assumption = getattr(tour_session, "assumption", None) or "D"
-    initial_topic, initial_focus_text = PERSONA_INITIAL_FOCUS.get(persona, PERSONA_INITIAL_FOCUS["A"])
-    assumption_text = ASSUMPTION_REFLECTION_TEXTS.get(assumption, ASSUMPTION_REFLECTION_TEXTS["D"])
+    initial_topic, entry_line = PERSONA_REVIEW_ENTRY.get(persona, PERSONA_REVIEW_ENTRY["A"])
+    assumption_line = ASSUMPTION_REVIEW_HINTS.get(assumption, ASSUMPTION_REVIEW_HINTS["D"])
 
     question_count = 0
     deep_dive_count = 0
     scores: dict[str, float] = {key: 0.0 for key in REFLECTION_TOPIC_LABELS}
+    signal_halls: list[str] = []
 
     for event in events or []:
         event_type = getattr(event, "event_type", "") or ""
@@ -214,6 +265,9 @@ def build_reflection_summary(
         else:
             weight = 0.5
 
+        if hall and event_type in {"exhibit_question", "exhibit_deep_dive", "exhibit_view"} and hall not in signal_halls:
+            signal_halls.append(hall)
+
         for topic, topic_weight in HALL_TOPIC_WEIGHTS.get(hall, {}).items():
             scores[topic] += topic_weight * weight
 
@@ -223,9 +277,9 @@ def build_reflection_summary(
     total_signals = question_count + deep_dive_count
     if total_signals < 2:
         return {
-            "initial_assumption": f"{initial_focus_text}；{assumption_text}",
-            "observed_focus": "目前只记录到少量提问或深入查看，更多是展厅到访线索。",
-            "change_summary": "证据不足，关注点变化暂不明显。",
+            "initial_assumption": INSUFFICIENT_REVIEW_LINES["focus"],
+            "observed_focus": INSUFFICIENT_REVIEW_LINES["evidence"],
+            "change_summary": INSUFFICIENT_REVIEW_LINES["next"],
             "confidence": 0.35,
             "status": "insufficient",
             "initial_focus": REFLECTION_TOPIC_LABELS.get(initial_topic, initial_topic),
@@ -237,31 +291,46 @@ def build_reflection_summary(
     total_score = sum(scores.values()) or 1.0
     observed_label = REFLECTION_TOPIC_LABELS.get(top_topic, top_topic)
     initial_label = REFLECTION_TOPIC_LABELS.get(initial_topic, initial_topic)
+    hall_text = _format_review_halls(signal_halls)
+    topic_lines = REVIEW_TOPIC_LINES.get(
+        top_topic,
+        {
+            "focus": f"关注点集中在{observed_label}。",
+            "evidence": "可回看{halls}中的相关展品、展签和遗迹位置。",
+            "next": "继续追问这条线索背后的证据来源。",
+        },
+    )
     confidence = min(0.92, 0.5 + (top_score / total_score) * 0.3 + min(total_signals, 6) * 0.03)
 
     if top_score <= 0:
-        observed_focus = "你的提问还没有形成清晰主题。"
-        change_summary = "证据不足，暂时不能判断关注点变化。"
+        initial_assumption = INSUFFICIENT_REVIEW_LINES["focus"]
+        observed_focus = INSUFFICIENT_REVIEW_LINES["evidence"]
+        change_summary = INSUFFICIENT_REVIEW_LINES["next"]
         status = "insufficient"
         confidence = 0.35
     elif top_topic == initial_topic:
-        observed_focus = f"你的提问和深入查看主要集中在{observed_label}。"
-        change_summary = f"关注点基本保持稳定：你从{initial_label}进入导览，过程中也持续围绕这一方向积累证据。"
+        initial_assumption = f"{entry_line}{assumption_line}"
+        observed_focus = topic_lines["evidence"].format(halls=hall_text)
+        change_summary = topic_lines["next"].format(halls=hall_text)
         status = "stable"
     else:
-        observed_focus = f"你的提问和深入查看逐渐集中到{observed_label}。"
-        change_summary = f"关注点出现了转向：你从{initial_label}进入导览，但过程中更频繁地追问{observed_label}，说明新的证据正在改变你的观察重心。"
+        initial_assumption = topic_lines["focus"].format(halls=hall_text)
+        observed_focus = topic_lines["evidence"].format(halls=hall_text)
+        change_summary = (
+            f"把{initial_label}的初始问题放到{observed_label}这条线索上继续核对："
+            f"{topic_lines['next'].format(halls=hall_text)}"
+        )
         status = "shifted"
 
     if radar_scores:
         strongest_radar = max(radar_scores, key=lambda key: radar_scores.get(key, 0))
         if strongest_radar == "ceramic_aesthetics" and top_topic != "craft":
-            observed_focus += " 同时，报告画像仍显示你保留了器物细节观察的能力。"
+            observed_focus += " 器物细节也可作为辅助线索保留。"
         elif strongest_radar == "life_experience" and top_topic != "life":
-            observed_focus += " 同时，报告画像里也能看到你对生活经验的关注。"
+            observed_focus += " 日常生活场景也可作为辅助线索保留。"
 
     return {
-        "initial_assumption": f"{initial_focus_text}；{assumption_text}",
+        "initial_assumption": initial_assumption,
         "observed_focus": observed_focus,
         "change_summary": change_summary,
         "confidence": round(confidence, 2),
@@ -521,16 +590,26 @@ def _clean_record_text(value: str | None) -> str:
     return text
 
 
+def _finish_summary_sentence(text: str) -> str:
+    """Normalize summary ending to a complete Chinese sentence."""
+    cleaned = text.strip().rstrip("，、；;：:,. ")
+    if not cleaned:
+        return ""
+    if cleaned[-1] in "。！？":
+        return cleaned
+    return cleaned + "。"
+
+
 def _trim_summary(text: str, max_chars: int = RECORD_SUMMARY_MAX_CHARS) -> str:
     """Keep the summary within the budget without cutting mid-sentence."""
     cleaned = _clean_record_text(text)
     if len(cleaned) <= max_chars:
-        return cleaned
+        return _finish_summary_sentence(cleaned)
     window = cleaned[:max_chars]
-    cut = max(window.rfind(sep) for sep in "。！？；")
+    cut = max(window.rfind(sep) for sep in "。！？")
     if cut >= int(max_chars * 0.6):
-        return window[: cut + 1]
-    return window.rstrip("，、；：…. ") + "。"
+        return _finish_summary_sentence(window[: cut + 1])
+    return _finish_summary_sentence(window)
 
 
 def collect_qa_pairs(events: list) -> list[dict[str, str]]:
@@ -585,9 +664,10 @@ def _build_summary_prompt(persona: str, qa_pairs: list[dict[str, str]]) -> str:
         "1. 必须基于上面真实问答的具体内容，准确写出游客实际关心的问题，"
         "以及对话中得到的关键信息或结论；不要套用与本次对话无关的通用说辞，也不要编造未提到的展品。\n"
         "2. 用第二人称「你」称呼游客，像在帮游客复盘这次参观。\n"
-        "3. 输出一段完整的话，不超过400字，必须有完整结尾，"
-        "不要写标题、列表、编号或Markdown符号。\n"
-        "4. 只输出摘要正文本身，不要任何前后缀、引号或解释。"
+        "3. 输出一段完整的话，建议120到220字，最多260字；宁可概括，不要堆叠全部展品名称、"
+        "痕迹和细节。\n"
+        "4. 用2到3个短句完成，句末只能用句号、问号或感叹号，不要用分号收尾。\n"
+        "5. 不要写标题、列表、编号或Markdown符号，只输出摘要正文本身，不要任何前后缀、引号或解释。"
     )
 
 
@@ -596,7 +676,7 @@ async def generate_record_summary_llm(
     persona: str,
     qa_pairs: list[dict[str, str]],
 ) -> str:
-    """Summarize the real tour conversation into a <=400 char record summary."""
+    """Summarize the real tour conversation into a concise record summary."""
     prompt = _build_summary_prompt(persona, qa_pairs)
     messages = [{"role": "user", "content": prompt}]
     model = getattr(llm_provider, "report_model", None)

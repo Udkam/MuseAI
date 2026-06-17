@@ -468,7 +468,7 @@ def _format_report(report, tour_session=None, events=None) -> dict:
     if record_summary:
         record_notes = [{
             "question": "游览记录摘要",
-            "point": _compact_record_text(record_summary, 400),
+            "point": _compact_record_text(record_summary, 260),
         }]
     else:
         record_notes = _build_report_record_notes(events, getattr(tour_session, "persona", None))
