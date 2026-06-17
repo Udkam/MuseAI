@@ -1,0 +1,37 @@
+# MuseAI backend systemd unit
+#
+# Install:
+#   sudo cp deploy/museai-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now museai-backend
+#
+# Adjust before installing:
+#   - WorkingDirectory / EnvironmentFile: replace /home/ubuntu/MuseAI/backend
+#     with the actual checkout path on the server.
+#   - ExecStart uv path: run `which uv` as the service user and use that
+#     absolute path (systemd does not load the user's shell PATH).
+
+[Unit]
+Description=MuseAI FastAPI backend (uvicorn)
+# Infrastructure (PostgreSQL/Redis/Elasticsearch) runs via docker compose;
+# start after docker so dependencies have a chance to come up first.
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/MuseAI/backend
+# The app also loads backend/.env itself (pydantic-settings), so this is a
+# safety net for values referenced at process start. systemd parses this file
+# strictly: values with spaces must be quoted, no `export` keyword.
+EnvironmentFile=/home/ubuntu/MuseAI/backend/.env
+ExecStart=/home/ubuntu/.local/bin/uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+# Give in-flight SSE streams a moment to finish on stop/restart.
+TimeoutStopSec=20
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+# MuseAI backend log rotation
+#
+# Install:
+#   sudo cp deploy/logrotate-museai /etc/logrotate.d/museai
+#   sudo logrotate --debug /etc/logrotate.d/museai   # dry-run check
+#
+# Adjust the path if the checkout lives elsewhere. copytruncate is required:
+# the backend keeps its log file handle open and has no reopen-on-signal hook.
+
+/home/ubuntu/MuseAI/backend/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su ubuntu ubuntu
+}

@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MuseAI is a Museum AI Guide System - a RAG (Retrieval-Augmented Generation) application for intelligent museum content interaction. It uses FastAPI for the backend, Vue 3 + Element Plus for the frontend, and integrates with Elasticsearch, PostgreSQL, Redis, and OpenAI-compatible LLM providers.
+MuseAI is a Museum AI Guide System - a RAG (Retrieval-Augmented Generation) application for intelligent museum content interaction for the Xi'an Banpo Museum. It integrates Elasticsearch, PostgreSQL, Redis, and OpenAI-compatible LLM providers (default: Alibaba Qwen via DashScope compatible-mode).
+
+The system has **two separate frontends** — do not conflate them:
+
+- **Admin web frontend** — `backend/frontend/` (Vue 3 + Element Plus + Vite). The management console for exhibits, halls, documents, prompts, LLM traces, and TTS personas. It lives **inside this backend repository**.
+- **Visitor mini-program frontend** — a separate top-level `frontend/` Git repository (native WeChat mini-program). The guest-facing guide client used by museum visitors. It is **NOT in this repository** and is opened with WeChat DevTools.
+
+This `backend/` repository contains the FastAPI backend **and** the admin web frontend at `backend/frontend/`.
 
 ## Development Commands
 
@@ -36,14 +43,18 @@ uv run mypy backend/
 uv run uvicorn backend.app.main:app --reload
 ```
 
-### Frontend
+### Admin Web Frontend (`backend/frontend/`)
+
+Vue 3 + Element Plus + Vite. This is the management console — **not** the visitor client.
 
 ```bash
-cd frontend
+cd frontend     # i.e. backend/frontend, the admin console (relative to this backend repo root)
 npm install
-npm run dev      # Development server
+npm run dev      # Vite dev server
 npm run build    # Production build
 ```
+
+> The visitor-facing WeChat mini-program lives in the **separate top-level `frontend/` repository** and is opened with WeChat DevTools, not built with the commands above.
 
 ### Infrastructure
 
@@ -222,8 +233,8 @@ Environment variables (see `.env.example` for full reference):
 ### Auth
 - `JWT_SECRET`: str, default `""` — **Required in production** (≥32 chars)
 - `JWT_ALGORITHM`: str, default `"HS256"` — JWT signing algorithm
-- `JWT_EXPIRE_MINUTES`: int, default `60` — Token lifetime in minutes
-- `ADMIN_EMAILS`: str, default `""` — Comma-separated admin emails
+- `JWT_EXPIRE_MINUTES`: int, settings.py default `60` — Token lifetime in minutes (`.env.example` ships `1440`)
+- `ADMIN_EMAILS`: str, default `""` — Comma-separated admin emails. **Deprecated**: in production this raises a `DeprecationWarning`. Initialize admins with `scripts/bootstrap_admin.py` instead.
 
 ### Database
 - `DATABASE_URL`: str, default `"sqlite+aiosqlite:///:memory:"` — PostgreSQL connection string
@@ -231,34 +242,56 @@ Environment variables (see `.env.example` for full reference):
 ### Elasticsearch
 - `ELASTICSEARCH_URL`: str, default `"http://localhost:9200"` — ES endpoint
 - `ELASTICSEARCH_INDEX`: str, default `"museai_chunks_v1"` — ES index name
-- `EMBEDDING_DIMS`: int, default `768` — Vector dimensionality (1–4096)
+- `EMBEDDING_DIMS`: int, settings.py default `768` (1–4096) — Vector dimensionality. ⚠️ Must match the deployed embedding model **and** the ES index mapping. `.env.example` ships `1536`; confirm the value matches your actual embedding model before (re)indexing.
 
 ### Redis
 - `REDIS_URL`: str, default `"redis://localhost:6379"` — Redis endpoint
 
 ### LLM
-- `LLM_PROVIDER`: str, default `"openai"` — LLM provider name
-- `LLM_BASE_URL`: str, default `"https://api.openai.com/v1"` — LLM API base URL
-- `LLM_API_KEY`: str, default `""` — **Required in production**
-- `LLM_MODEL`: str, default `"gpt-4o-mini"` — Model identifier
+- `LLM_PROVIDER`: str, default `"qwen"` — One of: openai_compatible, openai, deepseek, qwen
+- `LLM_BASE_URL`: str, default `"https://dashscope.aliyuncs.com/compatible-mode/v1"` — OpenAI-compatible base URL (DashScope Beijing; use `dashscope-intl` / `dashscope-us` for Singapore / Virginia)
+- `LLM_API_KEY`: str, default `""` — **Required in production** (DashScope / Model Studio API key)
+- `LLM_MODEL`: str, default `"qwen-flash"` — Backward-compatible fallback model
+- `LLM_TOUR_MODEL`: str, default `"qwen-flash"` — Tour chat / RAG query rewrite / streaming guide answers
+- `LLM_REPORT_MODEL`: str, default `"qwen-plus"` — Reports and research-style summarization
+- `LLM_COMPAT_MODE`: str, default `"qwen"` — One of: auto, openai, deepseek, qwen (provider-specific request shaping)
+- `LLM_HEADERS`: str, default `""` — JSON object string of extra headers, e.g. `{"User-Agent": "curl/8.5.0"}`
+- `LLM_TEMPERATURE`: float, default `0.2` — 0.0–2.0
+- `LLM_MAX_TOKENS`: int, default `800` — `0` = no limit
+- `LLM_ENABLE_THINKING`: bool, default `False` — Disables provider thinking mode where supported. Qwen3.5/3.6 hybrid-thinking models default thinking **on**; keep this `False` to control cost/latency.
 
 ### Embedding
-- `EMBEDDING_PROVIDER`: str, default `"ollama"` — Embedding provider
-- `EMBEDDING_OLLAMA_BASE_URL`: str, default `"http://localhost:11434"` — Ollama endpoint
-- `EMBEDDING_OLLAMA_MODEL`: str, default `"nomic-embed-text"` — Ollama model name
+- `EMBEDDING_PROVIDER`: str, default `"ollama"` — One of: ollama, openai
+- `EMBEDDING_OLLAMA_BASE_URL`: str, default `"http://localhost:11434"` — Ollama endpoint (provider=ollama)
+- `EMBEDDING_OLLAMA_MODEL`: str, default `"nomic-embed-text"` — Ollama model name (provider=ollama)
+- `EMBEDDING_OPENAI_BASE_URL` / `EMBEDDING_OPENAI_API_KEY` / `EMBEDDING_OPENAI_MODEL`: str, default `""` — Used when provider=openai (SiliconFlow / OpenAI-compatible embeddings)
 
 ### Rerank
-- `RERANK_PROVIDER`: str, default `"openai"` — Rerank provider (openai, cohere, custom)
-- `RERANK_BASE_URL`: str, default `""` — Rerank API base URL
-- `RERANK_API_KEY`: str, default `""` — **Required in production when RERANK_PROVIDER is set**
+- `RERANK_PROVIDER`: str, settings.py default `"siliconflow"` — One of: siliconflow, openai, cohere, custom, mock. (`.env.example` ships `mock` for local/test; use a real provider in production.)
+- `RERANK_BASE_URL`: str, default `""` — Required for openai/cohere/custom providers. (The SiliconFlow provider's base URL is hardcoded in its provider class — do not change.)
+- `RERANK_API_KEY`: str, default `""` — **Required in production for real (non-mock) providers**
 - `RERANK_MODEL`: str, default `"rerank-v1"` — Rerank model identifier
-- `RERANK_TOP_N`: int, default `10` — Number of results to return
+- `RERANK_TOP_N`: int, default `10` — Candidates returned by rerank
+- `RERANK_ABSOLUTE_THRESHOLD`: float, default `0.25` — Dynamic-filter absolute score gate (0–1)
+- `RERANK_RELATIVE_GAP`: float, default `0.25` — Dynamic-filter relative-gap strategy (0–1)
+- `RERANK_MIN_DOCS`: int, default `1` — Minimum docs kept after filtering
+- `RERANK_MAX_DOCS`: int, default `8` — Maximum docs kept after filtering (≤ `RERANK_TOP_N`)
+
+### Retrieval & Chunk Merge
+- `RETRIEVAL_TOP_K`: int, default `15` — Candidates retrieved before rerank
+- `CHUNK_MERGE_ENABLED`: bool, default `True` — Promote parent chunks when child chunks are retrieved
+- `CHUNK_MERGE_MAX_LEVEL`: int, default `1` — Max chunk level allowed during merge
+- `CHUNK_MERGE_MAX_PARENTS`: int, default `3` — Max parent chunks promoted
 
 ### TTS
-- `TTS_ENABLED`: bool, default `False` — Enable text-to-speech
-- `TTS_PROVIDER`: str, default `"xiaomi"` — TTS provider (xiaomi, mock)
-- `TTS_API_KEY`: str, default `""` — TTS API key
-- `TTS_DEFAULT_VOICE`: str, default `"冰糖"` — Default TTS voice/persona
+- `TTS_ENABLED`: bool, settings.py default `True` — Enable text-to-speech. (`.env.example` ships `false`; the mini-program uses manual TTS playback.)
+- `TTS_PROVIDER`: str, default `"xiaomi"` — One of: xiaomi, mock
+- `TTS_BASE_URL`: str, default `"https://api.xiaomimimo.com/v1"` — Xiaomi MiMo TTS base URL
+- `TTS_API_KEY`: str, default `""` — **Required in production when TTS_ENABLED and provider != mock**
+- `TTS_MODEL`: str, default `"mimo-v2.5-tts"` — TTS model identifier
+- `TTS_DEFAULT_VOICE`: str, default `"冰糖"` — Default voice/persona (frontend pins to 冰糖)
+- `TTS_TIMEOUT`: float, default `30.0` — TTS request timeout (seconds)
+- `TTS_VOICE_DESIGN_MODEL`: str, default `"mimo-v2.5-tts-voicedesign"` — Voice design model (admin voice preview)
 
 ### Logging
 - `LOG_LEVEL`: str, default `"INFO"` — One of: DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -276,7 +309,7 @@ Environment variables (see `.env.example` for full reference):
 - `CORS_ORIGINS`: str, default `"http://localhost:3000"` — Comma-separated origins or `"*"` (wildcard forbidden in production)
 - `CORS_ALLOW_CREDENTIALS`: bool, default `True` — Allow credentials in CORS
 
-Production requires `JWT_SECRET` (≥32 chars), `LLM_API_KEY`, and `RERANK_API_KEY` (when rerank is configured).
+Production requires `JWT_SECRET` (≥32 chars), `LLM_API_KEY`, `RERANK_API_KEY` (when `RERANK_PROVIDER` != mock), and `TTS_API_KEY` (when `TTS_ENABLED` and provider != mock). `ADMIN_EMAILS` is deprecated in production — use `scripts/bootstrap_admin.py`.
 
 ## Testing Structure
 

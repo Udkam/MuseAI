@@ -41,11 +41,17 @@ The backend is currently in **Stage 13: pre-launch closed-loop validation and re
 
 ## Not Complete Or Still Needs Real-Device Validation
 
-- Formal WeChat mini-program filing and request legal-domain approval.
-- `api.banpo-museai.xyz` has DNS/SSL/Nginx setup, but may be blocked in real WeChat devices before filing is accepted.
-- OCR recognition is currently handled mainly by the mini-program side with exhibit text matching fallback; no backend OCR API was added.
+HTTPS status, split in two parts:
+
+- Done (server side): `api.banpo-museai.xyz` DNS, SSL certificate, and Nginx 443 reverse proxy are configured; `https://api.banpo-museai.xyz/api/v1/health` returns healthy; the frontend API endpoints have been switched to this HTTPS domain.
+- Not done (WeChat side): filing, WeChat admin legal request-domain configuration, and a full real-device run with the DevTools legal-domain exemption turned off.
+
+Other items:
+
+- OCR service ID is not configured; OCR recognition is currently handled mainly by the mini-program side with exhibit text matching fallback; no backend OCR API was added.
 - Official museum exhibit catalogue, images, map, positions, and spatial layout still need confirmation.
-- Production process management, log rotation, and database backup must be finalized.
+- Production process management (systemd), log rotation, and database backup now have deployment assets (see `deploy/`), but they have not been applied on the server yet.
+- Full experience-version real-device acceptance is not complete.
 
 ## Tech Stack
 
@@ -192,8 +198,8 @@ The current server resource budget is now **2 CPU cores / 8 GB RAM**. Deployment
 
 - Uvicorn listens on `127.0.0.1:8000`.
 - Nginx proxies traffic to the backend.
-- Development debugging can use `http://122.152.232.190:3000/api/v1`.
-- Formal mini-program traffic should use `https://api.banpo-museai.xyz/api/v1`, but it cannot be treated as production-ready before filing and WeChat legal-domain approval pass.
+- Mini-program traffic now uses `https://api.banpo-museai.xyz/api/v1`; the WeChat production environment still requires filing and legal-domain approval.
+- Historical note: early development used `http://122.152.232.190:3000/api/v1`; the public HTTP entry should be closed once HTTPS real-device validation passes (see `deploy/DEPLOYMENT_NOTES.md`).
 
 Recommended for 2 CPU cores / 8 GB RAM:
 
