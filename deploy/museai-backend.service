@@ -6,7 +6,7 @@
 #   sudo systemctl enable --now museai-backend
 #
 # Adjust before installing:
-#   - WorkingDirectory / EnvironmentFile: replace /home/ubuntu/MuseAI/backend
+#   - WorkingDirectory / EnvironmentFile: replace /home/ubuntu/MuseAI
 #     with the actual checkout path on the server.
 #   - ExecStart uv path: run `which uv` as the service user and use that
 #     absolute path (systemd does not load the user's shell PATH).
@@ -21,11 +21,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/MuseAI/backend
+WorkingDirectory=/home/ubuntu/MuseAI
 # The app also loads backend/.env itself (pydantic-settings), so this is a
 # safety net for values referenced at process start. systemd parses this file
 # strictly: values with spaces must be quoted, no `export` keyword.
-EnvironmentFile=/home/ubuntu/MuseAI/backend/.env
+EnvironmentFile=/home/ubuntu/MuseAI/.env
 ExecStart=/home/ubuntu/.local/bin/uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=5

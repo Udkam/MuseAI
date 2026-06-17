@@ -7,7 +7,7 @@
 # Adjust the path if the checkout lives elsewhere. copytruncate is required:
 # the backend keeps its log file handle open and has no reopen-on-signal hook.
 
-/home/ubuntu/MuseAI/backend/logs/*.log {
+/home/ubuntu/MuseAI/logs/*.log {
     daily
     rotate 14
     compress
