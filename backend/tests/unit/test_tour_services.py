@@ -618,12 +618,14 @@ def test_get_report_theme():
     assert get_report_theme("D") == "artifact_study"
 
 
-def test_aggregate_stats_dedupes_retried_question_events():
-    session = _make_session(started_at=datetime.now(UTC) - timedelta(minutes=5))
+def test_aggregate_stats_dedupes_same_client_question_id_only():
+    base_time = datetime.now(UTC)
+    session = _make_session(started_at=base_time - timedelta(minutes=5))
     events = [
         _make_event_model(
             event_type="exhibit_question",
             hall="basic-exhibition-hall",
+            created_at=base_time,
             event_meta={
                 "client_event_id": "q-1",
                 "message": "半坡的石器和骨器是做什么用的？",
@@ -633,6 +635,7 @@ def test_aggregate_stats_dedupes_retried_question_events():
         _make_event_model(
             event_type="exhibit_question",
             hall="basic-exhibition-hall",
+            created_at=base_time + timedelta(seconds=1),
             event_meta={
                 "client_event_id": "q-1",
                 "message": "半坡的石器和骨器是做什么用的？",
@@ -653,22 +656,69 @@ def test_aggregate_stats_dedupes_retried_question_events():
 
     stats = aggregate_stats(events, session)
 
-    assert stats["total_questions"] == 2
+    assert stats["total_questions"] == 3
     assert stats["ceramic_questions"] == 1
 
 
-def test_aggregate_stats_prefers_answered_questions_for_report_count():
+def test_aggregate_stats_dedupes_frontend_question_retry_window():
+    base_time = datetime.now(UTC)
+    session = _make_session(started_at=base_time - timedelta(minutes=5))
+    events = [
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            created_at=base_time,
+            event_meta={"message": "same question"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            created_at=base_time + timedelta(seconds=2),
+            event_meta={
+                "client_event_id": f"{int(base_time.timestamp() * 1000)}-question-abcd1234",
+                "message": "same question",
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="basic-exhibition-hall",
+            created_at=base_time + timedelta(seconds=40),
+            event_meta={"message": "same question"},
+        ).to_entity(),
+    ]
+
+    stats = aggregate_stats(events, session)
+
+    assert stats["total_questions"] == 2
+
+
+def test_aggregate_stats_counts_user_sent_messages_not_answer_events():
     session = _make_session(started_at=datetime.now(UTC) - timedelta(minutes=5))
     events = [
         _make_event_model(
             event_type="exhibit_question",
             hall="basic-exhibition-hall",
-            event_meta={"question": "裸问题，不应在已有回答统计中加一"},
+            event_meta={"message": "问题一"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="site-protection-hall",
+            event_meta={"message": "问题二", "is_ceramic_question": True},
+        ).to_entity(),
+        _make_event_model(
+            event_type="exhibit_question",
+            hall="kiln-hall",
+            event_meta={"message": "问题三"},
         ).to_entity(),
         _make_event_model(
             event_type="assistant_answer",
             hall="basic-exhibition-hall",
             event_meta={"question": "问题一", "answer": "回答一"},
+        ).to_entity(),
+        _make_event_model(
+            event_type="assistant_answer",
+            hall="basic-exhibition-hall",
+            event_meta={"question": "问题一", "answer": "重复回答不应重复计数"},
         ).to_entity(),
         _make_event_model(
             event_type="assistant_answer",
@@ -686,6 +736,43 @@ def test_aggregate_stats_prefers_answered_questions_for_report_count():
 
     assert stats["total_questions"] == 3
     assert stats["ceramic_questions"] == 1
+
+
+def test_aggregate_stats_dedupes_retried_answers_with_new_client_ids():
+    session = _make_session(started_at=datetime.now(UTC) - timedelta(minutes=5))
+    events = [
+        _make_event_model(
+            event_type="assistant_answer",
+            hall="kiln-hall",
+            event_meta={
+                "client_event_id": "answer-1",
+                "question": "陶窑结构能说明什么烧制技术？",
+                "answer": "陶窑结构能说明火候控制和通风方式。",
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="assistant_answer",
+            hall="kiln-hall",
+            event_meta={
+                "client_event_id": "answer-retry-1",
+                "question": "陶窑结构能说明什么烧制技术？",
+                "answer": "陶窑结构能说明火候控制和通风方式。",
+            },
+        ).to_entity(),
+        _make_event_model(
+            event_type="assistant_answer",
+            hall="basic-exhibition-hall",
+            event_meta={
+                "client_event_id": "answer-2",
+                "question": "石器和骨器有什么用途？",
+                "answer": "它们对应加工、制作和生产分工。",
+            },
+        ).to_entity(),
+    ]
+
+    stats = aggregate_stats(events, session)
+
+    assert stats["total_questions"] == 0
 
 
 def test_aggregate_stats_counts_exhibit_view_without_duration():
@@ -846,19 +933,33 @@ async def test_generate_one_liner_uses_report_model_override():
 # Record Summary Tests
 # ===================================================================
 
-def _qa_event(event_type, question="", answer="", hall="kiln-hall"):
+def _qa_event(event_type, question="", answer="", hall="kiln-hall", metadata_extra=None):
+    metadata = {"question": question, "answer": answer}
+    metadata.update(metadata_extra or {})
     return SimpleNamespace(
         event_type=event_type,
         hall=hall,
-        metadata={"question": question, "answer": answer},
+        metadata=metadata,
     )
 
 
-def test_collect_qa_pairs_keeps_only_answered_and_dedupes():
+def test_collect_qa_pairs_keeps_answered_turns_and_dedupes_client_retries():
     events = [
         _qa_event("exhibit_question", question="半坡陶器怎么烧制？"),
-        _qa_event("assistant_answer", question="半坡陶器怎么烧制？", answer="通过陶窑控制火候烧制。"),
-        # duplicate question (same hall) should merge, not double-count
+        _qa_event(
+            "assistant_answer",
+            question="半坡陶器怎么烧制？",
+            answer="通过陶窑控制火候烧制。",
+            metadata_extra={"client_event_id": "answer-1"},
+        ),
+        # Transport retry with the same client id is ignored.
+        _qa_event(
+            "assistant_answer",
+            question="半坡陶器怎么烧制？",
+            answer="（重试重复）",
+            metadata_extra={"client_event_id": "answer-1"},
+        ),
+        # A repeated visitor turn without a shared client id is preserved.
         _qa_event("assistant_answer", question="半坡陶器怎么烧制？", answer="（重复）"),
         # answered question in a different hall
         _qa_event(
@@ -873,9 +974,10 @@ def test_collect_qa_pairs_keeps_only_answered_and_dedupes():
 
     pairs = collect_qa_pairs(events)
 
-    assert [p["question"] for p in pairs] == ["半坡陶器怎么烧制？", "尖底瓶怎么用？"]
-    assert pairs[0]["answer"] == "通过陶窑控制火候烧制。"  # first answer wins
-    assert pairs[1]["hall"] == "basic-exhibition-hall"
+    assert [p["question"] for p in pairs] == ["半坡陶器怎么烧制？", "半坡陶器怎么烧制？", "尖底瓶怎么用？"]
+    assert pairs[0]["answer"] == "通过陶窑控制火候烧制。"
+    assert pairs[1]["answer"] == "（重复）"
+    assert pairs[2]["hall"] == "basic-exhibition-hall"
 
 
 def test_collect_qa_pairs_empty_without_answers():
@@ -888,7 +990,7 @@ async def test_generate_record_summary_uses_report_model_and_trims():
     llm_provider = AsyncMock()
     llm_provider.supports_model_override = True
     llm_provider.report_model = "deepseek-v4-pro"
-    # >260 chars, sentence-delimited, to exercise the non-truncating trim
+    # >400 chars, sentence-delimited, to exercise the non-truncating trim
     llm_provider.generate.return_value = LLMResponse(
         content="你重点了解了半坡陶器的烧制工艺。" * 40,
         model="deepseek-v4-pro",
@@ -903,7 +1005,7 @@ async def test_generate_record_summary_uses_report_model_and_trims():
         [{"hall": "kiln-hall", "question": "陶器怎么烧？", "answer": "用陶窑控制火候。"}],
     )
 
-    assert len(result) <= 260
+    assert len(result) <= 400
     assert result.endswith("。")  # complete sentence, not mid-word cut
     assert not result.endswith("；")
     _, kwargs = llm_provider.generate.call_args

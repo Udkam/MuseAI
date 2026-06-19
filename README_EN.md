@@ -23,9 +23,11 @@ The backend is currently in **Stage 13: pre-launch closed-loop validation and re
 - Event tracking for hall enter, exhibit view, questions, and deep dives.
 - AI curator route API: `/api/v1/curator/plan-tour`.
 - Exhibit listing, detail lookup, hall filtering, and text search.
-- Visit report generation: visited halls, reflection, record summary, and basic stats.
-  - Visited halls are counted only from real feature-use events: questions, AI answers, exhibit views, and deep dives.
-  - Record notes are grouped by hall from user questions and AI answers without extra LLM calls.
+- Visit report generation: visited halls, exhibit views, reflection, record summary, and basic stats.
+  - Visited halls are counted from `exhibit_question` or `exhibit_view`, with `assistant_answer` retained for historical compatibility.
+  - Question totals count user-sent messages: every `exhibit_question` counts once, without deduplicating repeated question text.
+  - Exhibit views are counted separately from hall visits and deduped by exhibit.
+  - Record notes are grouped by hall from user questions and AI answers, using the report model first and falling back to a rule-based summary if generation fails.
 - Reflection Engine without new database tables, new APIs, or new model calls.
 - RAG pipeline with query rewrite, Elasticsearch retrieval, rerank, document filtering, and streaming generation.
 - LLM model tiers:
@@ -43,7 +45,8 @@ The backend is currently in **Stage 13: pre-launch closed-loop validation and re
 
 HTTPS status, split in two parts:
 
-- Done (server side): `api.banpo-museai.xyz` DNS, SSL certificate, and Nginx 443 reverse proxy are configured; `https://api.banpo-museai.xyz/api/v1/health` returns healthy; the frontend API endpoints have been switched to this HTTPS domain.
+- Done (server side): `api.banpo-museai.xyz` DNS, SSL certificate, and Nginx 443 reverse proxy are configured; `https://api.banpo-museai.xyz/api/v1/health` returns healthy.
+- Current development state: because `banpo-museai.xyz` is still waiting for filing, the mini-program frontend temporarily uses the server HTTP development endpoint `http://122.152.232.190:3000/api/v1`; release builds must switch back to `https://api.banpo-museai.xyz/api/v1`.
 - Not done (WeChat side): filing, WeChat admin legal request-domain configuration, and a full real-device run with the DevTools legal-domain exemption turned off.
 
 Other items:
@@ -113,11 +116,10 @@ Report statistics depend on `tour_events`. Frontend events should use one of the
 Visited halls are counted from:
 
 - `exhibit_question`
-- `assistant_answer`
 - `exhibit_view`
-- `exhibit_deep_dive`
+- `assistant_answer`
 
-Simply entering a hall is not enough to count it as visited in the report. The user must actually use a feature in that hall, such as asking a question, tapping a suggestion that asks a question, viewing an exhibit, or starting a deep dive.
+Simply entering a hall is not enough. A hall is counted after the user sends a message in that hall, or opens any exhibit detail page from that hall. `halls_visited` is deduped by canonical hall slug. Question totals are counted from `exhibit_question`, one per user-sent message, without deduplicating repeated text. Exhibit detail entry records `exhibit_view` and affects exhibit stats separately, deduped by exhibit.
 
 ## Environment Variables
 
@@ -181,7 +183,9 @@ Common checks:
 ```bash
 cd backend
 py -3 -m py_compile backend/app/api/tour.py backend/app/api/curator.py backend/app/api/tts.py backend/app/application/tour_chat_service.py backend/app/application/tour_report_service.py
+py -3 -m py_compile backend/app/application/tour_event_service.py
 uv run --extra dev pytest backend/tests/unit/test_tour_chat.py -q
+uv run --extra dev pytest backend/tests/unit/test_tour_services.py -q
 uv run --extra dev pytest backend/tests/unit/test_tts_core.py backend/tests/unit/test_tts_advanced.py backend/tests/unit/test_voice_description_helpers.py -q
 uv run --extra dev pytest backend/tests/contract/test_tour_api.py -q
 ```
@@ -190,6 +194,8 @@ Full test run:
 
 ```bash
 uv run --extra dev pytest -q
+# If an old Windows pytest temp directory is locked:
+uv run --extra dev pytest -q --basetemp .pytest-tmp
 ```
 
 ## Server Deployment Notes
@@ -198,7 +204,7 @@ The current server resource budget is now **2 CPU cores / 8 GB RAM**. Deployment
 
 - Uvicorn listens on `127.0.0.1:8000`.
 - Nginx proxies traffic to the backend.
-- Mini-program traffic now uses `https://api.banpo-museai.xyz/api/v1`; the WeChat production environment still requires filing and legal-domain approval.
+- During filing, the mini-program can temporarily use `http://122.152.232.190:3000/api/v1` for development; release builds must switch back to `https://api.banpo-museai.xyz/api/v1` and disable the WeChat DevTools legal-domain exemption.
 - Historical note: early development used `http://122.152.232.190:3000/api/v1`; the public HTTP entry should be closed once HTTPS real-device validation passes (see `deploy/DEPLOYMENT_NOTES.md`).
 
 Recommended for 2 CPU cores / 8 GB RAM:
@@ -225,7 +231,7 @@ Before launch, replace manual `nohup` with systemd or Docker Compose.
 
 - Decide the mini-program filing subject: individual, university/project institution, or museum partner.
 - After filing passes, configure WeChat legal domains for request/uploadFile/downloadFile.
-- Switch frontend API endpoints from development IP to HTTPS domain.
+- Switch frontend API endpoints from the temporary development HTTP endpoint to `https://api.banpo-museai.xyz/api/v1`.
 - Rotate any AppSecret or API keys that were exposed during testing.
 - Add systemd/Docker Compose, log rotation, database backups, and rollback steps.
 - Complete iOS/Android real-device validation for onboarding, routes, tour chat, TTS, OCR, and reports.

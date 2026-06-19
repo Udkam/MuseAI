@@ -135,8 +135,8 @@ HALL_TOPIC_WEIGHTS = {
 }
 
 
-RECORD_SUMMARY_MAX_CHARS = 260
-RECORD_SUMMARY_MAX_PAIRS = 12
+RECORD_SUMMARY_MAX_CHARS = 400
+RECORD_SUMMARY_MAX_PAIRS = 40
 RECORD_SUMMARY_ANSWER_CHARS = 320
 RECORD_SUMMARY_QUESTION_CHARS = 120
 
@@ -383,6 +383,31 @@ def _event_dedupe_key(event, *parts: Any) -> str:
     return "|".join(normalized_parts)
 
 
+def _event_timestamp_seconds(event) -> float | None:
+    metadata = _event_metadata(event)
+    client_event_id = str(
+        metadata.get("client_event_id")
+        or metadata.get("question_client_event_id")
+        or ""
+    )
+    client_time = client_event_id.split("-", 1)[0]
+    if client_time.isdigit():
+        return float(client_time) / 1000
+    created_at = _ensure_aware(getattr(event, "created_at", None))
+    if not created_at:
+        return None
+    return created_at.timestamp()
+
+
+def _normalize_question_signature(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:180]
+
+
+def _is_frontend_question_client_id(value: Any) -> bool:
+    return "-question-" in str(value or "")
+
+
 def aggregate_stats(events: list, tour_session) -> dict:
     total_duration = 0.0
     started_at = _ensure_aware(tour_session.started_at)
@@ -394,13 +419,11 @@ def aggregate_stats(events: list, tour_session) -> dict:
 
     exhibit_durations: dict[str, int] = {}
     hall_durations: dict[str, int] = {}
-    answered_questions = 0
-    fallback_questions = 0
-    answered_ceramic_questions = 0
-    fallback_ceramic_questions = 0
+    sent_questions = 0
+    sent_ceramic_questions = 0
     viewed_exhibits: set[str] = set()
-    seen_answered_questions: set[str] = set()
     seen_question_events: set[str] = set()
+    recent_question_signatures: dict[str, tuple[float, bool]] = {}
     seen_duration_events: set[str] = set()
 
     for event in events:
@@ -441,34 +464,34 @@ def aggregate_stats(events: list, tour_session) -> dict:
             if not hall:
                 continue
             hall_durations[hall] = hall_durations.get(hall, 0) + event.duration_seconds
-        elif event.event_type == "assistant_answer":
-            question_text = metadata.get("question") or metadata.get("message") or ""
-            question_key = _event_dedupe_key(
-                event,
-                event.event_type,
-                normalize_hall(event.hall),
-                question_text,
-            )
-            if question_key in seen_answered_questions:
-                continue
-            seen_answered_questions.add(question_key)
-            answered_questions += 1
-            if metadata.get("is_ceramic_question") or detect_ceramic_question(str(question_text)):
-                answered_ceramic_questions += 1
         elif event.event_type == "exhibit_question":
-            question_text = metadata.get("message") or metadata.get("question") or ""
-            question_key = _event_dedupe_key(
-                event,
-                event.event_type,
-                normalize_hall(event.hall),
-                question_text,
-            )
-            if question_key in seen_question_events:
-                continue
-            seen_question_events.add(question_key)
-            fallback_questions += 1
-            if metadata.get("is_ceramic_question"):
-                fallback_ceramic_questions += 1
+            question_text = metadata.get("message") or metadata.get("question") or metadata.get("query") or ""
+            client_event_id = metadata.get("client_event_id")
+            if client_event_id:
+                question_key = f"client:{client_event_id}"
+                if question_key in seen_question_events:
+                    continue
+                seen_question_events.add(question_key)
+            normalized_question = _normalize_question_signature(question_text)
+            event_time = _event_timestamp_seconds(event)
+            if normalized_question and event_time is not None:
+                hall = normalize_hall(event.hall) or ""
+                question_signature = f"{hall}|{normalized_question}"
+                has_frontend_question_id = _is_frontend_question_client_id(client_event_id)
+                previous = recent_question_signatures.get(question_signature)
+                if (
+                    previous is not None
+                    and abs(event_time - previous[0]) <= 15
+                    and (previous[1] or has_frontend_question_id)
+                ):
+                    continue
+                recent_question_signatures[question_signature] = (
+                    event_time,
+                    has_frontend_question_id,
+                )
+            sent_questions += 1
+            if metadata.get("is_ceramic_question") or detect_ceramic_question(str(question_text)):
+                sent_ceramic_questions += 1
 
     most_viewed_exhibit_id = None
     most_viewed_exhibit_duration = None
@@ -485,8 +508,8 @@ def aggregate_stats(events: list, tour_session) -> dict:
         longest_hall_duration = hall_durations[top_hall]
 
     site_hall_minutes = hall_durations.get("site-protection-hall", 0) / 60.0
-    total_questions = answered_questions if answered_questions else fallback_questions
-    ceramic_questions = answered_ceramic_questions if answered_questions else fallback_ceramic_questions
+    total_questions = sent_questions
+    ceramic_questions = sent_ceramic_questions
 
     return {
         "total_duration_minutes": round(total_duration, 1),
@@ -647,9 +670,11 @@ def collect_qa_pairs(events: list) -> list[dict[str, str]]:
     a later answer can attach to it. Only pairs with a non-empty answer are kept —
     a conversation with no answers has nothing to summarize.
     """
-    entries: dict[str, dict[str, str]] = {}
-    order: list[str] = []
-    for event in events or []:
+    pairs: list[dict[str, str]] = []
+    pending_by_client_id: dict[str, dict[str, str]] = {}
+    seen_answer_events: set[str] = set()
+
+    for index, event in enumerate(events or []):
         event_type = getattr(event, "event_type", None)
         if event_type not in {"assistant_answer", "exhibit_question"}:
             continue
@@ -660,17 +685,41 @@ def collect_qa_pairs(events: list) -> list[dict[str, str]]:
         if not question:
             continue
         hall = normalize_hall(getattr(event, "hall", None) or metadata.get("hall")) or ""
-        key = f"{hall}|{question}"
-        entry = entries.get(key)
-        if entry is None:
-            entry = {"hall": hall, "question": question, "answer": ""}
-            entries[key] = entry
-            order.append(key)
+        client_event_id = str(
+            metadata.get("question_client_event_id")
+            or metadata.get("client_event_id")
+            or ""
+        ).strip()
+
+        if event_type == "exhibit_question":
+            if client_event_id and client_event_id not in pending_by_client_id:
+                pending_by_client_id[client_event_id] = {
+                    "hall": hall,
+                    "question": question,
+                    "answer": "",
+                }
+            continue
+
         if event_type == "assistant_answer":
             answer = _clean_record_text(metadata.get("answer"))
-            if answer and not entry["answer"]:
-                entry["answer"] = answer
-    return [entries[key] for key in order if entries[key]["answer"]]
+            if not answer:
+                continue
+            answer_key = f"client:{client_event_id}" if client_event_id else f"answer:{index}"
+            if answer_key in seen_answer_events:
+                continue
+            seen_answer_events.add(answer_key)
+
+            entry = pending_by_client_id.get(client_event_id) if client_event_id else None
+            if entry is None:
+                entry = {"hall": hall, "question": question, "answer": ""}
+            if not entry.get("hall"):
+                entry["hall"] = hall
+            if not entry.get("question"):
+                entry["question"] = question
+            entry["answer"] = answer
+            pairs.append(entry)
+
+    return pairs
 
 
 def _build_summary_prompt(persona: str, qa_pairs: list[dict[str, str]]) -> str:
@@ -691,8 +740,8 @@ def _build_summary_prompt(persona: str, qa_pairs: list[dict[str, str]]) -> str:
         "1. 必须基于上面真实问答的具体内容，准确写出游客实际关心的问题，"
         "以及对话中得到的关键信息或结论；不要套用与本次对话无关的通用说辞，也不要编造未提到的展品。\n"
         "2. 用第二人称「你」称呼游客，像在帮游客复盘这次参观。\n"
-        "3. 输出一段完整的话，建议120到220字，最多260字；宁可概括，不要堆叠全部展品名称、"
-        "痕迹和细节。\n"
+        "3. 输出一段完整的话，建议180到320字，最多400字；必须覆盖上面全部问答涉及的展厅、展品或主题，"
+        "可以压缩关键词，但不要只总结前几条，也不要堆叠全部展品名称、痕迹和细节。\n"
         "4. 用2到3个短句完成，句末只能用句号、问号或感叹号，不要用分号收尾。\n"
         "5. 不要写标题、列表、编号或Markdown符号，只输出摘要正文本身，不要任何前后缀、引号或解释。"
     )

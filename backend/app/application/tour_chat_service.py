@@ -228,6 +228,7 @@ async def ask_stream_tour(
     rag_agent: Any,
     llm_provider: Any,
     exhibit_id: str | None = None,
+    client_event_id: str | None = None,
     exhibit_context: str | None = None,
     client_context: str | None = None,
     conversation_history: list[dict[str, str]] | None = None,
@@ -371,16 +372,19 @@ async def ask_stream_tour(
 
     try:
         async with session_maker() as event_session:
+            event_metadata = {"question": message, "is_ceramic_question": is_ceramic}
+            if client_event_id:
+                event_metadata["client_event_id"] = client_event_id
             await record_events(event_session, tour_session_id, [
                 {
                     "event_type": "exhibit_question",
                     "exhibit_id": exhibit_id,
                     "hall": tour_session.current_hall,
-                    "metadata": {"question": message, "is_ceramic_question": is_ceramic},
+                    "metadata": event_metadata,
                 }
             ])
     except Exception as e:
-            log.error("Failed to record tour event after retries: {}", e)
+        log.error("Failed to record tour event after retries: {}", e)
 
 
 async def _stream_rag(

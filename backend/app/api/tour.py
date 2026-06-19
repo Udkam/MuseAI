@@ -44,9 +44,7 @@ TourPersonaCode = Literal["A", "B", "C", "D"]
 TourAssumptionCode = Literal["A", "B", "C", "D"]
 VISITED_HALL_EVENT_TYPES = {
     "exhibit_question",
-    "assistant_answer",
     "exhibit_view",
-    "exhibit_deep_dive",
 }
 
 
@@ -95,6 +93,7 @@ class TourChatHistoryItem(BaseModel):
 class TourChatRequest(BaseModel):
     message: str = Field(..., max_length=2000)
     exhibit_id: str | None = None
+    client_event_id: str | None = Field(default=None, max_length=120)
     style: TourChatStyle | None = None
     client_context: str | None = Field(default=None, max_length=1500)
     conversation_history: list[TourChatHistoryItem] | None = Field(default=None, max_length=8)
@@ -319,7 +318,7 @@ def _record_knowledge_phrases(answer_text: str, topic: str) -> list[str]:
     return phrases[:3]
 
 
-def _append_summary_sentence(parts: list[str], sentence: str, max_len: int = 300) -> None:
+def _append_summary_sentence(parts: list[str], sentence: str, max_len: int = 400) -> None:
     if sentence and len("".join(parts) + sentence) <= max_len:
         parts.append(sentence)
 
@@ -353,7 +352,7 @@ def _build_record_summary_point(
 
 
 def _record_point_from_answer(answer: str | None) -> str:
-    text = _compact_record_text(answer, 300)
+    text = _compact_record_text(answer, 400)
     if not text:
         return "这条问题已经留下线索，后续可回到对应展厅核对可见证据。"
     sentences = [
@@ -391,7 +390,9 @@ def _persona_record_frame(persona: str | None) -> tuple[str, str]:
 
 
 def _build_report_record_notes(events=None, persona: str | None = None) -> list[dict[str, str]]:
-    entries_by_question: dict[str, dict[str, str]] = {}
+    answered_entries: list[dict[str, str]] = []
+    question_entries: list[dict[str, str]] = []
+    seen_answer_ids: set[str] = set()
     for event in events or []:
         event_type = getattr(event, "event_type", None)
         if event_type not in {"assistant_answer", "exhibit_question"}:
@@ -414,19 +415,27 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
         compact_question = _compact_record_text(question, 54)
         if not compact_question:
             continue
-        key = f"{hall or 'summary'}|{compact_question}"
-        entry = entries_by_question.setdefault(
-            key,
-            {
-                "hall": hall or "",
-                "question": compact_question,
-                "answer": "",
-            },
-        )
+        entry = {
+            "hall": hall or "",
+            "question": compact_question,
+            "answer": "",
+        }
         if event_type == "assistant_answer" and metadata.get("answer"):
-            entry["answer"] = _compact_record_text(metadata.get("answer"), 300)
+            client_event_id = str(
+                metadata.get("question_client_event_id")
+                or metadata.get("client_event_id")
+                or ""
+            ).strip()
+            if client_event_id:
+                if client_event_id in seen_answer_ids:
+                    continue
+                seen_answer_ids.add(client_event_id)
+            entry["answer"] = _compact_record_text(metadata.get("answer"), 400)
+            answered_entries.append(entry)
+        elif event_type == "exhibit_question":
+            question_entries.append(entry)
 
-    entries = list(entries_by_question.values())
+    entries = answered_entries or question_entries
     if not entries:
         return []
 
@@ -436,7 +445,7 @@ def _build_report_record_notes(events=None, persona: str | None = None) -> list[
         if hall_name and hall_name not in hall_names:
             hall_names.append(hall_name)
     hall_text = "、".join(hall_names) if hall_names else "半坡遗址"
-    questions_text = "”“".join(entry["question"] for entry in entries[:4])
+    questions_text = "”“".join(entry["question"] for entry in entries)
     answer_text = " ".join(entry["answer"] for entry in entries if entry["answer"])
     topic = _infer_record_topic(" ".join([questions_text, answer_text]))
     point = _build_record_summary_point(hall_text, questions_text, answer_text, topic)
@@ -468,7 +477,7 @@ def _format_report(report, tour_session=None, events=None) -> dict:
     if record_summary:
         record_notes = [{
             "question": "游览记录摘要",
-            "point": _compact_record_text(record_summary, 260),
+            "point": _compact_record_text(record_summary, 400),
         }]
     else:
         record_notes = _build_report_record_notes(events, getattr(tour_session, "persona", None))
@@ -768,6 +777,7 @@ async def tour_chat_stream(
             rag_agent=rag_agent,
             llm_provider=llm_provider,
             exhibit_id=body.exhibit_id,
+            client_event_id=body.client_event_id,
             client_context=body.client_context,
             conversation_history=[
                 item.model_dump() for item in body.conversation_history

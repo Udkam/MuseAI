@@ -588,9 +588,10 @@ async def test_generate_tour_report(override_dependencies):
 
 
 @pytest.mark.asyncio
-async def test_generate_tour_report_counts_halls_with_question_activity(override_dependencies):
+async def test_generate_tour_report_counts_halls_with_user_message_or_exhibit_view(override_dependencies):
+    record_summary = "你在史前工坊完成了一次研学记录提问，关注工具和材料如何转化为观察线索。"
     mock_llm = AsyncMock()
-    mock_llm.generate = AsyncMock(return_value="半坡记录完成")
+    mock_llm.generate = AsyncMock(side_effect=["半坡记录完成", record_summary])
 
     app.dependency_overrides[original_get_llm_provider] = lambda: mock_llm
 
@@ -624,6 +625,24 @@ async def test_generate_tour_report_counts_halls_with_question_activity(override
                         "hall": "prehistoric-workshop",
                         "metadata": {"message": "这里适合怎么做研学记录？"},
                     },
+                    {
+                        "event_type": "assistant_answer",
+                        "hall": "prehistoric-workshop",
+                        "metadata": {
+                            "question": "这里适合怎么做研学记录？",
+                            "answer": "可以把工具、材料和操作步骤整理成观察记录。",
+                        },
+                    },
+                    {
+                        "event_type": "exhibit_view",
+                        "exhibit_id": "exhibit-report-1",
+                        "hall": "basic-exhibition-hall",
+                    },
+                    {
+                        "event_type": "exhibit_view",
+                        "exhibit_id": "exhibit-report-1",
+                        "hall": "basic-exhibition-hall",
+                    },
                 ]
             },
             headers={"X-Session-Token": token},
@@ -637,13 +656,15 @@ async def test_generate_tour_report_counts_halls_with_question_activity(override
 
     assert report_resp.status_code == 200
     data = report_resp.json()
-    assert data["halls_visited"] == ["prehistoric-workshop"]
+    assert data["halls_visited"] == ["prehistoric-workshop", "basic-exhibition-hall"]
+    assert data["total_questions"] == 1
+    assert data["total_exhibits_viewed"] == 1
     assert data["record_notes"]
     assert data["record_notes"][0]["question"] == "游览记录摘要"
+    assert data["record_notes"][0]["point"] == record_summary
     assert not data["record_notes"][0]["point"].startswith("以")
     assert "你提出的问题包括" not in data["record_notes"][0]["point"]
-    assert "主要留下这些线索：" in data["record_notes"][0]["point"]
-    assert len(data["record_notes"][0]["point"]) <= 300
+    assert len(data["record_notes"][0]["point"]) <= 400
 
 
 @pytest.mark.asyncio
@@ -715,7 +736,7 @@ async def test_generate_tour_report_uses_llm_record_summary(override_dependencie
     assert data["record_notes"][0]["point"] == summary
     # Real summary, not the keyword template, and within the concise summary budget.
     assert "主要留下这些线索：" not in data["record_notes"][0]["point"]
-    assert len(data["record_notes"][0]["point"]) <= 260
+    assert len(data["record_notes"][0]["point"]) <= 400
 
 
 @pytest.mark.asyncio
