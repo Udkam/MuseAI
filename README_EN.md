@@ -6,7 +6,7 @@ MuseAI backend is the FastAPI service for the Banpo Museum WeChat mini-program. 
 
 ## Current Stage
 
-The backend is currently in **Stage 13: pre-launch closed-loop validation and release preparation**. The core mini-program experience is supported, but formal release still depends on filing, WeChat legal-domain approval, real-device testing, and production process management.
+The backend is now in the **launch preparation and release closeout stage**. The core mini-program experience is supported and the planned mini-program features have completed real-device testing. Formal release still depends on filing, WeChat legal-domain approval, real data, OCR service decisions, API-key governance, and production process management. See [上线准备.md](../project_materials/docs/上线准备.md) for the operational checklist.
 
 
 ## Implemented Capabilities
@@ -41,20 +41,22 @@ The backend is currently in **Stage 13: pre-launch closed-loop validation and re
 - Degraded startup if Redis or Elasticsearch is unavailable.
 - TTS synthesis API at `/api/v1/tts/synthesize`, currently defaulting to the "冰糖" voice and returning audio data playable by the mini-program.
 
-## Not Complete Or Still Needs Real-Device Validation
+## Not Complete Or Still Needs Release Acceptance
 
 HTTPS status, split in two parts:
 
 - Done (server side): `api.banpo-museai.xyz` DNS, SSL certificate, and Nginx 443 reverse proxy are configured; `https://api.banpo-museai.xyz/api/v1/health` returns healthy.
 - Current development state: because `banpo-museai.xyz` is still waiting for filing, the mini-program frontend temporarily uses the server HTTP development endpoint `http://122.152.232.190:3000/api/v1`; release builds must switch back to `https://api.banpo-museai.xyz/api/v1`.
-- Not done (WeChat side): filing, WeChat admin legal request-domain configuration, and a full real-device run with the DevTools legal-domain exemption turned off.
+- Not done (WeChat side): filing, WeChat admin legal request-domain configuration, and an official-environment real-device run with the DevTools legal-domain exemption turned off.
 
 Other items:
 
-- OCR service ID is not configured; OCR recognition is currently handled mainly by the mini-program side with exhibit text matching fallback; no backend OCR API was added.
-- Official museum exhibit catalogue, images, map, positions, and spatial layout still need confirmation.
+- OCR service has not been purchased or configured; OCR recognition is currently handled mainly by the mini-program side with exhibit text matching fallback; no backend OCR API was added.
+- Official museum exhibit catalogue, images, map, positions, and spatial layout still need confirmation. The current data is not the final real museum data.
+- The LLM Qwen API is provided by Alex, while other API keys are provided by another teammate. Release needs explicit ownership, quota, billing, alerting, and rotation rules.
+- Current Qwen calls consume free or trial quota. Confirm quota, rate limits, and billing policy in the provider console before experience-version testing.
 - Production process management (systemd), log rotation, and database backup now have deployment assets (see `deploy/`), but they have not been applied on the server yet.
-- Full experience-version real-device acceptance is not complete.
+- Experience-version upload, tester distribution, and official acceptance with legal-domain checks enabled are not complete.
 
 ## Tech Stack
 
@@ -162,6 +164,14 @@ TTS_DEFAULT_VOICE=冰糖
 
 Never commit `.env`. Restart the backend process after changing production `.env`.
 
+API-key ownership guidance:
+
+- `LLM_API_KEY` is currently maintained by Alex and is used mainly for Qwen/DashScope guide chat and report summaries.
+- `RERANK_API_KEY`, `TTS_API_KEY`, and future OCR or other service keys should each have an explicit owner.
+- The repository records config names only, never real key values.
+- Free quota must not be treated as the long-term production plan. Before experience-version testing, confirm billing, bill alerts, rate limits, and fallback model ids.
+- Prefer provider replacement through `.env` OpenAI-compatible settings. Do not change RAG or SSE contracts during the launch window.
+
 ## Local Development
 
 ```bash
@@ -232,6 +242,10 @@ Before launch, replace manual `nohup` with systemd or Docker Compose.
 - Decide the mini-program filing subject: individual, university/project institution, or museum partner.
 - After filing passes, configure WeChat legal domains for request/uploadFile/downloadFile.
 - Switch frontend API endpoints from the temporary development HTTP endpoint to `https://api.banpo-museai.xyz/api/v1`.
+- Import and sample-check official museum exhibit, hall, image, and spatial data.
+- Decide the OCR release strategy: buy/configure OCR service ID, or hide OCR and keep text search only.
+- Confirm Qwen/DashScope free quota, paid activation, rate limits, and bill alerts.
+- Define API-key owners and rotation process.
 - Rotate any AppSecret or API keys that were exposed during testing.
 - Add systemd/Docker Compose, log rotation, database backups, and rollback steps.
 - Complete iOS/Android real-device validation for onboarding, routes, tour chat, TTS, OCR, and reports.

@@ -34,6 +34,8 @@ env/
 # uv
 .uv/
 .uv-cache/
+.uv-cache-codex/
+uv-cache/
 uv.lock
 
 # IDE
@@ -49,10 +51,14 @@ Thumbs.db
 
 # Testing
 .pytest_cache/
+.pytest_tmp/
+.pytest-tmp/
 .coverage
 htmlcov/
 .tox/
 .nox/
+.ruff_cache/
+test_alembic.db
 
 # MyPy
 .mypy_cache/
